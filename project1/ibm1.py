@@ -1,6 +1,6 @@
-import numpy as np
-from scipy.sparse import lil_matrix
-from sklearn.preprocessing import normalize
+from typing import Dict, Tuple
+from collections import defaultdict
+from tqdm import tqdm_notebook
 
 from .data_reader import DataReader
 
@@ -11,28 +11,27 @@ class IBM1:
     def __init__(self, source_path: str, target_path) -> None:
         self.data_reader = DataReader(source_path, target_path)
 
-        self.probs: lil_matrix = self._reset_counts()
+        init_ef_norm = 1 / (self.data_reader.n_source_tokens * self.data_reader.n_target_tokens)
+        init_e_norm = 1 / self.data_reader.n_target_tokens
+        self.probs_ef: Dict[Tuple[str, str], float] = defaultdict(lambda: init_ef_norm)
+        self.probs_e: Dict[str, float] = defaultdict(lambda: init_e_norm)
 
     def train(self, n_iter: int):
         for s in range(n_iter):
-            counts = self._reset_counts()
+            counts_ef = defaultdict(float)
+            counts_e = defaultdict(float)
 
             for k in range(len(self.data_reader)):
                 e, f = self.data_reader[k]
                 e = [NULL_TOKEN] + e
                 for we in e:
                     for wf in f:
-                        we_i = self.data_reader.source_w2i[we]
-                        wf_i = self.data_reader.target_w2i[wf]
+                        delta = self.probs_ef[we, wf] / (self.probs_e[we])
 
-                        delta = self.probs[we_i, wf_i] / np.sum(self.probs[:, wf_i])
+                        if delta != 0:
+                            counts_ef[we, wf] += delta
+                            counts_e[we] += delta
 
-                        counts[we_i, wf_i] += delta
-
-            self.probs = normalize(counts, norm='l1', axis=1)
-
-    def _reset_counts(self) -> lil_matrix:
-        n_source_tokens = len(self.data_reader.source_w2i)
-        n_target_tokens = len(self.data_reader.target_w2i)
-
-        return lil_matrix((n_source_tokens, n_target_tokens))+1
+            for (we, wf), c in counts_ef.items():
+                self.probs_ef[we, wf] = c / counts_e[we]
+                self.probs_e[we] += c / counts_e[we]
