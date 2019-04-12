@@ -12,25 +12,30 @@ class IBM1:
         self.data_reader = DataReader(source_path, target_path)
 
         init_ef_norm = 1 / (self.data_reader.n_source_tokens * self.data_reader.n_target_tokens)
-        init_f_norm = 1 / self.data_reader.n_source_tokens
         self.probs_ef: Dict[Tuple[str, str], float] = defaultdict(lambda: init_ef_norm)
-        self.probs_f: Dict[str, float] = defaultdict(lambda: init_f_norm)
 
     def train(self, n_iter: int):
         for s in range(n_iter):
             counts_ef = defaultdict(float)
             counts_e = defaultdict(float)
 
+            # Maximization
             for k in tqdm_notebook(range(len(self.data_reader))):
                 e, f = self.data_reader[k]
-                e = [NULL_TOKEN] + e
+                f = [NULL_TOKEN] + f
+
+                e_normalizer = defaultdict(float)
                 for we in e:
                     for wf in f:
-                        delta = self.probs_ef[we, wf] / (self.probs_f[wf])
+                        e_normalizer[we] += self.probs_ef[we, wf]
+
+                for we in e:
+                    for wf in f:
+                        delta = self.probs_ef[we, wf] / e_normalizer[we]
 
                         counts_ef[we, wf] += delta
-                        counts_e[we] += delta
+                        counts_e[wf] += delta
 
+            # Expectation
             for (we, wf), c in counts_ef.items():
-                self.probs_ef[we, wf] = c / counts_e[we]
-                self.probs_f[wf] += c / counts_e[we]
+                self.probs_ef[we, wf] = c / counts_e[wf]
