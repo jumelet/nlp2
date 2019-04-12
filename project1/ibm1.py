@@ -12,26 +12,25 @@ class IBM1:
         self.data_reader = DataReader(source_path, target_path)
 
         init_ef_norm = 1 / (self.data_reader.n_source_tokens * self.data_reader.n_target_tokens)
-        init_e_norm = 1 / self.data_reader.n_target_tokens
+        init_f_norm = 1 / self.data_reader.n_source_tokens
         self.probs_ef: Dict[Tuple[str, str], float] = defaultdict(lambda: init_ef_norm)
-        self.probs_e: Dict[str, float] = defaultdict(lambda: init_e_norm)
+        self.probs_f: Dict[str, float] = defaultdict(lambda: init_f_norm)
 
     def train(self, n_iter: int):
         for s in range(n_iter):
             counts_ef = defaultdict(float)
             counts_e = defaultdict(float)
 
-            for k in range(len(self.data_reader)):
+            for k in tqdm_notebook(range(len(self.data_reader))):
                 e, f = self.data_reader[k]
                 e = [NULL_TOKEN] + e
                 for we in e:
                     for wf in f:
-                        delta = self.probs_ef[we, wf] / (self.probs_e[we])
+                        delta = self.probs_ef[we, wf] / (self.probs_f[wf])
 
-                        if delta != 0:
-                            counts_ef[we, wf] += delta
-                            counts_e[we] += delta
+                        counts_ef[we, wf] += delta
+                        counts_e[we] += delta
 
             for (we, wf), c in counts_ef.items():
                 self.probs_ef[we, wf] = c / counts_e[we]
-                self.probs_e[we] += c / counts_e[we]
+                self.probs_f[wf] += c / counts_e[we]

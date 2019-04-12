@@ -1,7 +1,5 @@
 from typing import List, Tuple
 
-from .w2i import W2I
-
 Sentence = List[str]
 Corpus = List[Sentence]
 
