@@ -7,9 +7,9 @@ Corpus = List[Sentence]
 class DataReader:
     def __init__(self, source_path: str, target_path) -> None:
         with open(source_path, 'r') as f1:
-            self.source: Corpus = [l.split(' ') for l in f1.read().split('\n')]
+            self.source: Corpus = [l.strip().split(' ') for l in f1.read().split('\n')]
         with open(target_path, 'r') as f2:
-            self.target: Corpus = [l.split(' ') for l in f2.read().split('\n')]
+            self.target: Corpus = [l.strip().split(' ') for l in f2.read().split('\n')]
 
         assert len(self.source) == len(self.target), \
             'Parallel corpus not of equal size!'
