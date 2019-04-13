@@ -1,6 +1,6 @@
 from typing import Dict, Tuple
 from collections import defaultdict
-from tqdm import tqdm_notebook
+from tqdm import tqdm
 
 from .data_reader import DataReader
 
@@ -11,7 +11,7 @@ class IBM1:
     def __init__(self, source_path: str, target_path) -> None:
         self.data_reader = DataReader(source_path, target_path)
 
-        init_ef_norm = 1 / (self.data_reader.n_source_tokens * self.data_reader.n_target_tokens)
+        init_ef_norm = 1 / (self.data_reader.n_source_types * self.data_reader.n_target_types)
         self.probs_ef: Dict[Tuple[str, str], float] = defaultdict(lambda: init_ef_norm)
 
     def train(self, n_iter: int):
@@ -20,7 +20,7 @@ class IBM1:
             counts_e = defaultdict(float)
 
             # Maximization
-            for k in tqdm_notebook(range(len(self.data_reader))):
+            for k in tqdm(range(len(self.data_reader))):
                 e, f = self.data_reader[k]
                 f = [NULL_TOKEN] + f
 
