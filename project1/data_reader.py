@@ -22,3 +22,7 @@ class DataReader:
 
     def __len__(self) -> int:
         return len(self.source)
+
+    def get_parallel_data(self):
+        for (source, target) in zip(self.source, self.target):
+            yield (source, target)
