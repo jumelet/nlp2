@@ -99,7 +99,10 @@ class IBM1(object):
             for (source, target) in tqdm(self.validation_data.get_parallel_data(), total=len(self.validation_data)):
                 links = set()
                 for i, t in enumerate(target, start=1):
-                    link = (np.argmax([self.translation_probs[(t,s)] for s in source]), i)
+                    link = (
+                        1 + np.argmax([self.translation_probs[(t,s)] for s in source]),
+                        i
+                    )
                     links.add(link)
                 predictions.append(links)
 
@@ -247,7 +250,7 @@ class IBM2(object):
                 links = set()
                 for i, t in enumerate(target, start=1):
                     link = (
-                        np.argmax(
+                        1 + np.argmax(
                             [self.translation_probs[(t, s)] * self.alignment_probs[(j, i, l, m)]
                              for (j, s)
                              in enumerate(source, start=1)]),
