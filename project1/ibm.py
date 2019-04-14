@@ -48,9 +48,14 @@ class IBM1(object):
         :return: None
         """
         print('Start training...')
+
+        # Collect convergence statistics
+        training_log_lik_per_epoch = []
+        validation_aer_per_epoch = []
+
         for iter in range(n_iterations):
 
-            print('Epoch {}.'.format(iter), end='\t')
+            print('Epoch {}.'.format(iter), end=' ')
 
             # EXPECTATION MAXIMISATION
             translation_counts = defaultdict(float)  # How often do 'e' and 'f' form a translation pair?
@@ -79,7 +84,8 @@ class IBM1(object):
 
                     training_log_likelihood += np.log(np.max([self.translation_probs[(t, s)] for s in source]))
 
-            print('Training log-likelihood: {}'.format(training_log_likelihood), end='\t')
+            print('Training log-likelihood: {}'.format(training_log_likelihood), end=' ')
+            training_log_lik_per_epoch.append(training_log_likelihood)
 
             for (s,t) in translation_counts:
                 self.translation_probs[(t, s)] = translation_counts[(s, t)] / occurrence_counts[s]
@@ -100,8 +106,11 @@ class IBM1(object):
             for gold, pred in zip(self.gold_links, predictions):
                 metric.update(sure=gold[0], probable=gold[1], predicted=pred)
 
-            # AER
-            print('Epoch {}. AER: {}'.format(iter, metric.aer()))
+            aer = metric.aer()
+            print('AER: {}'.format(iter, aer))
+            validation_aer_per_epoch.append(aer)
+
+        return training_log_lik_per_epoch, validation_aer_per_epoch
 
 
 class IBM2(object):
@@ -162,9 +171,14 @@ class IBM2(object):
         :return: None
         """
         print('Start training...')
+
+        # Collect convergence statistics
+        training_log_lik_per_epoch = []
+        validation_aer_per_epoch = []
+
         for iter in range(n_iterations):
 
-            print('Epoch {}.'.format(iter), end='\t')
+            print('Epoch {}.'.format(iter), end=' ')
 
             # EXPECTATION MAXIMISATION
             translation_counts = defaultdict(float)  # How often do 'e' and 'f' form a translation pair?
@@ -212,7 +226,8 @@ class IBM2(object):
                                  in enumerate(source, start=1)])
                         )
 
-            print('Training log-likelihood: {}'.format(training_log_likelihood), end='\t')
+            print('Training log-likelihood: {}'.format(training_log_likelihood), end=' ')
+            training_log_lik_per_epoch.append(training_log_likelihood)
 
             for (s,t) in translation_counts:
                 self.translation_probs[(t, s)] = translation_counts[(s, t)] / occurrence_counts[s]
@@ -244,7 +259,10 @@ class IBM2(object):
             for gold, pred in zip(self.gold_links, predictions):
                 metric.update(sure=gold[0], probable=gold[1], predicted=pred)
 
-            # AER
-            print('Epoch {}. AER: {}'.format(iter, metric.aer()))
+            aer = metric.aer()
+            print('AER: {}'.format(iter, aer))
+            validation_aer_per_epoch.append(aer)
+
+        return training_log_lik_per_epoch, validation_aer_per_epoch
 
 
