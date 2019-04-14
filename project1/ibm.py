@@ -55,7 +55,7 @@ class IBM1(object):
 
         for iter in range(n_iterations):
 
-            print('Epoch {}.'.format(iter), end=' ')
+            print('Epoch {}.'.format(iter))
 
             # EXPECTATION MAXIMISATION
             translation_counts = defaultdict(float)  # How often do 'e' and 'f' form a translation pair?
@@ -84,7 +84,7 @@ class IBM1(object):
 
                     training_log_likelihood += np.log(np.max([self.translation_probs[(t, s)] for s in source]))
 
-            print('Training log-likelihood: {}'.format(training_log_likelihood), end=' ')
+            print('Training log-likelihood: {}'.format(training_log_likelihood))
             training_log_lik_per_epoch.append(training_log_likelihood)
 
             for (s,t) in translation_counts:
@@ -97,6 +97,9 @@ class IBM1(object):
             predictions = []
 
             for (source, target) in tqdm(self.validation_data.get_parallel_data(), total=len(self.validation_data)):
+
+                source = [NULL_TOKEN] + source
+
                 links = set()
                 for i, t in enumerate(target, start=1):
                     link = (
@@ -181,7 +184,7 @@ class IBM2(object):
 
         for iter in range(n_iterations):
 
-            print('Epoch {}.'.format(iter), end=' ')
+            print('Epoch {}.'.format(iter))
 
             # EXPECTATION MAXIMISATION
             translation_counts = defaultdict(float)  # How often do 'e' and 'f' form a translation pair?
@@ -229,7 +232,7 @@ class IBM2(object):
                                  in enumerate(source, start=1)])
                         )
 
-            print('Training log-likelihood: {}'.format(training_log_likelihood), end=' ')
+            print('Training log-likelihood: {}'.format(training_log_likelihood))
             training_log_lik_per_epoch.append(training_log_likelihood)
 
             for (s,t) in translation_counts:
@@ -245,6 +248,9 @@ class IBM2(object):
             predictions = []
 
             for (source, target) in tqdm(self.validation_data.get_parallel_data(), total=len(self.validation_data)):
+
+                source = [NULL_TOKEN] + source
+
                 l = len(source)
                 m = len(target)
                 links = set()
