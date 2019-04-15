@@ -101,10 +101,10 @@ class IBM1(object):
                 source = [NULL_TOKEN] + source
 
                 links = set()
-                for i, t in enumerate(target, start=1):
+                for i, t in enumerate(target):
                     link = (
                         1 + np.argmax([self.translation_probs[(t,s)] for s in source]),
-                        i
+                        1 + i
                     )
                     links.add(link)
                 predictions.append(links)
@@ -206,16 +206,16 @@ class IBM2(object):
                 l = len(source)
                 m = len(target)
 
-                for i, t in enumerate(target, start=1):
+                for i, t in enumerate(target):
 
                     # First compute normalisation constant for this target word 'f'.
                     # It is necessary to update all counts involving 'f'.
                     delta_denominator = 0
-                    for (j, s) in enumerate(source, start=1):
+                    for (j, s) in enumerate(source):
                         delta_denominator += self.alignment_probs[(j, i, l, m)] * self.translation_probs[(t, s)]
 
                     # Now update the counts.
-                    for (j, s) in enumerate(source, start=1):
+                    for (j, s) in enumerate(source):
                         delta = self.translation_probs[(t, s)] / delta_denominator
 
                         translation_counts[(s, t)] += delta
@@ -229,7 +229,7 @@ class IBM2(object):
                             np.max(
                                 [self.translation_probs[(t, s)] * self.alignment_probs[(j, i, l, m)]
                                  for (j, s)
-                                 in enumerate(source, start=1)])
+                                 in enumerate(source)])
                         )
 
             print('Training log-likelihood: {}'.format(training_log_likelihood))
@@ -254,13 +254,13 @@ class IBM2(object):
                 l = len(source)
                 m = len(target)
                 links = set()
-                for i, t in enumerate(target, start=1):
+                for i, t in enumerate(target):
                     link = (
                         1 + np.argmax(
                             [self.translation_probs[(t, s)] * self.alignment_probs[(j, i, l, m)]
                              for (j, s)
-                             in enumerate(source, start=1)]),
-                        i
+                             in enumerate(source)]),
+                        1 + i
                     )
                     links.add(link)
                 predictions.append(links)
