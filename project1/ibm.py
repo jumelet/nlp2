@@ -36,7 +36,8 @@ class IBM1(object):
         self.validation_data = DataReader(source_path_valid, target_path_valid)
         self.gold_links = read_naacl_alignments(gold_path_valid)
 
-        self.translation_probs = defaultdict(lambda: EPSILON)
+        init_norm = 1 / (self.training_data.n_source_types * self.training_data.n_target_types)
+        self.translation_probs = defaultdict(lambda: init_norm)
 
 
     def train(self, n_iterations):
@@ -87,7 +88,7 @@ class IBM1(object):
             print('Training log-likelihood: {}'.format(training_log_likelihood))
             training_log_lik_per_epoch.append(training_log_likelihood)
 
-            for (s,t) in translation_counts:
+            for (s, t) in translation_counts:
                 self.translation_probs[(t, s)] = translation_counts[(s, t)] / occurrence_counts[s]
 
 
@@ -102,10 +103,12 @@ class IBM1(object):
 
                 links = set()
                 for i, t in enumerate(target):
+                    # print((i,t), [(j,s) for (j, s) in enumerate(source)])
                     link = (
                         1 + np.argmax([self.translation_probs[(t,s)] for s in source]),
                         1 + i
                     )
+                    # print(link)
                     links.add(link)
                 predictions.append(links)
 
@@ -163,9 +166,74 @@ class IBM2(object):
 
     def train(self, n_iterations):
         if self.alignment == 'positional':
-            return self._train_positional()
+            return self._train_positional(n_iterations)
         else:
-            raise NotImplementedError('Jump distribution not yet implemented!')
+            raise self._train_with_jumps(n_iterations)
+
+
+    def _train_with_jumps(self, n_iterations):
+
+        # Collect convergence statistics
+        training_log_lik_per_epoch = []
+        validation_aer_per_epoch = []
+
+        for iter in range(n_iterations):
+            print('Epoch {}.'.format(iter))
+
+            # EXPECTATION MAXIMISATION
+            translation_counts = defaultdict(float)  # How often do 'e' and 'f' form a translation pair?
+            occurrence_counts = defaultdict(float)  # How often does 'e' appear in the corpus?
+            training_log_likelihood = 0
+
+            jump_counts = defaultdict(float)
+
+            for (source, target) in tqdm(self.training_data.get_parallel_data(), total=len(self.training_data)):
+
+                # Add NULL token to naively cope with fertility
+                source = [NULL_TOKEN] + source
+
+                l = len(source)
+                m = len(target)
+
+                for i, t in enumerate(target):
+
+                    # First compute normalisation constant for this target word 'f'.
+                    # It is necessary to update all counts involving 'f'.
+                    delta_denominator = 0
+                    for (j, s) in enumerate(source):
+                        jump = i - np.floor(j * l/m)
+                        delta_denominator += self.alignment_probs[jump] * self.translation_probs[(t, s)]
+
+                    # Now update the counts.
+                    for (j, s) in enumerate(source):
+                        delta = self.translation_probs[(t, s)] / delta_denominator
+
+                        translation_counts[(s, t)] += delta
+                        occurrence_counts[s] += delta
+
+                        jump = i - np.floor(j * l / m)
+                        jump_counts[jump] += delta
+
+
+                    training_log_likelihood += \
+                        np.log(
+                            np.max(
+                                [self.translation_probs[(t, s)] * self.alignment_probs[(j, i, l, m)]
+                                 for (j, s)
+                                 in enumerate(source)])
+                        )
+
+            print('Training log-likelihood: {}'.format(training_log_likelihood))
+            training_log_lik_per_epoch.append(training_log_likelihood)
+
+            for (s, t) in translation_counts:
+                self.translation_probs[(t, s)] = translation_counts[(s, t)] / occurrence_counts[s]
+
+            tot_jump_count = sum(jump_counts.values())
+            for jump in jump_counts:
+                self.alignment_probs[jump] = jump_counts[jump] / tot_jump_count
+
+
 
 
     def _train_positional(self, n_iterations):
