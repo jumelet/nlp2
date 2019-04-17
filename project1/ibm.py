@@ -76,7 +76,6 @@ class IBM:
                 self.f_given_e[wf, we] = c / counts_e[we]
 
             if self.ibm_type == 'IBM2':
-                # TODO: check if this normalization is correct, slides say x \in [-L, L]
                 norm_align_probs = np.sum(list(counts_align.values()))
                 for x, c in counts_align.items():
                     self.align_probs[x] = c / norm_align_probs
