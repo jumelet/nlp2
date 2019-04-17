@@ -22,7 +22,7 @@ class IBM1:
             # Maximization
             for k in tqdm(range(len(self.data_reader))):
                 e, f = self.data_reader[k]
-                f = [NULL_TOKEN] + f
+                e = [NULL_TOKEN] + e
 
                 e_normalizer = defaultdict(float)
                 for we in e:
