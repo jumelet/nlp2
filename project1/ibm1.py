@@ -9,7 +9,13 @@ NULL_TOKEN = 'NULL'
 
 
 class IBM1:
-    def __init__(self, source_path_train: str, target_path_train, source_path_valid, target_path_valid) -> None:
+    def __init__(self,
+                 source_path_train: str,
+                 target_path_train,
+                 source_path_valid,
+                 target_path_valid,
+                 gold_path_valid) -> None:
+
         self.train_data_reader = DataReader(source_path_train, target_path_train)
         self.valid_data_reader = DataReader(source_path_valid, target_path_valid)
 
