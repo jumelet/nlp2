@@ -4,6 +4,7 @@ from typing import Dict, Tuple
 from collections import defaultdict
 
 from project1.data_reader import DataReader
+from .aer import read_naacl_alignments, AERSufficientStatistics
 
 NULL_TOKEN = 'NULL'
 
@@ -25,6 +26,8 @@ class IBM2:
 
         self.probs_ef: Dict[Tuple[str, str], float] = defaultdict(lambda: init_ef_norm)
         self.align_probs: Dict[int, float] = defaultdict(lambda: init_align)
+
+        self.gold_links = read_naacl_alignments(gold_path_valid)
 
     def get_jump(self, e_pos, f_pos, len_e, len_f):
         return e_pos - np.floor(f_pos * (len_e / len_f))
@@ -72,3 +75,31 @@ class IBM2:
             norm_align_probs = np.sum(list(counts_align.values()))
             for x, c in counts_align.items():
                 self.align_probs[x] = c / norm_align_probs
+
+            self.validation()
+
+    def validation(self):
+        print('Validation...')
+        metric = AERSufficientStatistics()
+        predictions = []
+
+        for (source, target) in tqdm(self.valid_data_reader.get_parallel_data(), total=len(self.valid_data_reader)):
+
+            source = [NULL_TOKEN] + source
+
+            l = len(source)
+            m = len(target)
+            links = set()
+            for i, t in enumerate(target):
+                link = (
+                    1 + np.argmax([self.probs_ef[(t, s)] for (j, s) in enumerate(source)]),
+                    1 + i
+                )
+                links.add(link)
+            predictions.append(links)
+
+        for gold, pred in zip(self.gold_links, predictions):
+            metric.update(sure=gold[0], probable=gold[1], predicted=pred)
+
+        aer = metric.aer()
+        print('AER: {}'.format(iter, aer))
