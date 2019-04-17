@@ -20,7 +20,7 @@ class IBM1:
         self.train_data_reader = DataReader(source_path_train, target_path_train)
         self.valid_data_reader = DataReader(source_path_valid, target_path_valid)
 
-        init_ef_norm = 1 / (self.train_data_reader.n_source_types * self.train_data_reader.n_target_types)
+        init_ef_norm = 1 / self.train_data_reader.n_target_types
         self.probs_ef: Dict[Tuple[str, str], float] = defaultdict(lambda: init_ef_norm)
 
         self.gold_links = read_naacl_alignments(gold_path_valid)
@@ -64,8 +64,6 @@ class IBM1:
         predictions = []
 
         for (source, target) in tqdm(self.valid_data_reader.get_parallel_data(), total=len(self.valid_data_reader)):
-
-            source = [NULL_TOKEN] + source
 
             l = len(source)
             m = len(target)
