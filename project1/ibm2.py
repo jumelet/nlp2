@@ -64,6 +64,8 @@ class IBM2:
                     training_log_likelihood += \
                         np.log(np.sum([self.probs_ef[(wf, we)] for we in e])) - np.log(1 / len_e)
 
+            print('Training log-likelihood: {}'.format(training_log_likelihood))
+
             for (we, wf), c in counts_ef.items():
                 self.probs_ef[we, wf] = c / counts_e[wf]
 
