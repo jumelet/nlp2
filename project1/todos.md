@@ -17,3 +17,8 @@
 ### Meeting
 
 - discuss experiments
+    - initialisation
+    - error analysis
+        - POS tags
+            - source POS --> target POS 
+            - sequences of POS for which errors are frequent
