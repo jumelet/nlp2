@@ -26,7 +26,7 @@ class IBM1:
         self.gold_links = read_naacl_alignments(gold_path_valid)
 
     def train(self, n_iter: int):
-        for s in range(n_iter):
+        for iter in range(n_iter):
             counts_ef = defaultdict(float)
             counts_e = defaultdict(float)
             training_log_likelihood = 0
@@ -56,9 +56,9 @@ class IBM1:
             for (we, wf), c in counts_ef.items():
                 self.probs_ef[we, wf] = c / counts_e[wf]
 
-            self.validation()
+            self.validation(iter)
 
-    def validation(self):
+    def validation(self, iter):
         print('Validation...')
         metric = AERSufficientStatistics()
         predictions = []
@@ -82,4 +82,4 @@ class IBM1:
             metric.update(sure=gold[0], probable=gold[1], predicted=pred)
 
         aer = metric.aer()
-        print('AER: {}'.format(iter, aer))
+        print(f'AER: {iter} {aer:.3f}')
