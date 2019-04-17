@@ -21,56 +21,55 @@ class IBM1:
         self.valid_data_reader = DataReader(source_path_valid, target_path_valid)
 
         init_ef_norm = 1 / self.train_data_reader.n_target_types
-        self.probs_ef: Dict[Tuple[str, str], float] = defaultdict(lambda: init_ef_norm)
+        self.f_given_e: Dict[Tuple[str, str], float] = defaultdict(lambda: init_ef_norm)
 
         self.gold_links = read_naacl_alignments(gold_path_valid)
 
     def train(self, n_iter: int):
-        for iter in range(n_iter):
+        for iteration in range(n_iter):
             counts_ef = defaultdict(float)
             counts_e = defaultdict(float)
             training_log_likelihood = 0
 
-            # Maximization
-            for (e, f) in tqdm(self.train_data_reader.get_parallel_data(), total=len(self.train_data_reader)):
+            # Expectation
+            for (e, f) in tqdm(self.train_data_reader.get_parallel_data(),
+                               total=len(self.train_data_reader)):
 
                 e = [NULL_TOKEN] + e
                 len_e = len(e)
 
-                e_normalizer = defaultdict(float)
-                for we in e:
-                    for wf in f:
-                        e_normalizer[we] += self.probs_ef[we, wf]
-
                 for wf in f:
+                    delta_normalizer = 0
                     for we in e:
-                        delta = self.probs_ef[we, wf] / e_normalizer[we]
-                        counts_ef[we, wf] += delta
-                        counts_e[wf] += delta
+                        delta_normalizer += self.f_given_e[wf, we]
 
-                    training_log_likelihood += np.log(np.sum([self.probs_ef[(wf, we)] for we in e])) - np.log(1 / len_e)
+                    for we in e:
+                        delta = self.f_given_e[wf, we] / delta_normalizer
+                        counts_ef[we, wf] += delta
+                        counts_e[we] += delta
+
+                    training_log_likelihood += np.log(np.sum([self.f_given_e[wf, we] for we in e])) - np.log(1 / len_e)
 
             print('Training log-likelihood: {}'.format(training_log_likelihood))
 
-            # Expectation
+            # Maximization
             for (we, wf), c in counts_ef.items():
-                self.probs_ef[we, wf] = c / counts_e[wf]
+                self.f_given_e[wf, we] = c / counts_e[we]
 
-            self.validation(iter)
+            self.validation(iteration)
 
-    def validation(self, iter):
+    def validation(self, iteration: int):
         print('Validation...')
         metric = AERSufficientStatistics()
         predictions = []
 
-        for (source, target) in tqdm(self.valid_data_reader.get_parallel_data(), total=len(self.valid_data_reader)):
+        for source, target in tqdm(self.valid_data_reader.get_parallel_data(),
+                                   total=len(self.valid_data_reader)):
 
-            l = len(source)
-            m = len(target)
             links = set()
-            for i, t in enumerate(target):
+            for i, wf in enumerate(target):
                 link = (
-                    1 + np.argmax([self.probs_ef[(t, s)] for (j, s) in enumerate(source)]),
+                    1 + np.argmax([self.f_given_e[wf, we] for we in source]),
                     1 + i
                 )
                 links.add(link)
@@ -80,4 +79,4 @@ class IBM1:
             metric.update(sure=gold[0], probable=gold[1], predicted=pred)
 
         aer = metric.aer()
-        print(f'AER: {iter} {aer:.3f}')
+        print(f'AER: {iteration} {aer:.3f}')
