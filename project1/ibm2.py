@@ -1,5 +1,5 @@
 import numpy as np
-from tqdm import tqdm_notebook
+from tqdm import tqdm
 from typing import Dict, Tuple
 from collections import defaultdict
 
@@ -37,8 +37,7 @@ class IBM2:
             counts_align = defaultdict(int)
             training_log_likelihood = 0
 
-            for k in tqdm_notebook(range(len(self.train_data_reader))):
-                e, f = self.train_data_reader[k]
+            for (e, f) in tqdm(self.train_data_reader.get_parallel_data(), total=len(self.train_data_reader)):
                 e = [NULL_TOKEN] + e
 
                 len_e = len(e)
@@ -51,8 +50,9 @@ class IBM2:
                         jump = self.get_jump(e_pos, f_pos, len_e, len_f)
                         e_normalizer[we] += self.probs_ef[we, wf] * self.align_probs[jump]
 
-                for e_pos, we in enumerate(e):
-                    for f_pos, wf in enumerate(f):
+                for f_pos, wf in enumerate(f):
+                    for e_pos, we in enumerate(e):
+
                         jump = self.get_jump(e_pos, f_pos, len_e, len_f)
 
                         delta = (self.probs_ef[we, wf] * self.align_probs[jump]) / e_normalizer[we]
@@ -61,7 +61,8 @@ class IBM2:
                         counts_e[wf] += delta
                         counts_align[jump] += delta
 
-            # training_log_likelihood +=
+                    training_log_likelihood += \
+                        np.log(np.sum([self.probs_ef[(wf, we)] for we in e])) - np.log(1 / len_e)
 
             for (we, wf), c in counts_ef.items():
                 self.probs_ef[we, wf] = c / counts_e[wf]

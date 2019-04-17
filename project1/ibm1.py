@@ -1,3 +1,4 @@
+import numpy as np
 from typing import Dict, Tuple
 from collections import defaultdict
 from tqdm import tqdm
@@ -29,23 +30,24 @@ class IBM1:
             training_log_likelihood = 0
 
             # Maximization
-            for k in tqdm(range(len(self.train_data_reader))):
-                e, f = self.train_data_reader[k]
+            for (e, f) in tqdm(self.train_data_reader.get_parallel_data(), total=len(self.train_data_reader)):
+
                 e = [NULL_TOKEN] + e
+                len_e = len(e)
 
                 e_normalizer = defaultdict(float)
                 for we in e:
                     for wf in f:
                         e_normalizer[we] += self.probs_ef[we, wf]
 
-                for we in e:
-                    for wf in f:
+                for wf in f:
+                    for we in e:
                         delta = self.probs_ef[we, wf] / e_normalizer[we]
-
                         counts_ef[we, wf] += delta
                         counts_e[wf] += delta
 
-            # training_log_likelihood +=
+                    training_log_likelihood += \
+                        np.log(np.sum([self.probs_ef[(wf, we)] for we in e])) - np.log(1 / len_e)
 
             # Expectation
             for (we, wf), c in counts_ef.items():
