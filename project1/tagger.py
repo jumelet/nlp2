@@ -1,8 +1,10 @@
-import spacy
 from tqdm import tqdm
 
-from project1.data_reader import DataReader
+import spacy
 from spacy.tokens import Doc
+
+from project1.data_reader import DataReader
+
 
 ###
 source_path = 'data/training/hansards.36.2.e'
@@ -16,7 +18,6 @@ En = spacy.load('en_core_web_md')
 Fr = spacy.load('fr_core_news_md')
 
 data_reader = DataReader(source_path, target_path)
-
 with open(source_output_path, 'w') as source_f_out, open(target_output_path, 'w') as target_f_out:
     for (e, f) in tqdm(data_reader.get_parallel_data(), total=len(data_reader)):
 
