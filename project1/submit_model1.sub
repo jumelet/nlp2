@@ -1,0 +1,17 @@
+executable = script_model1.sh
+
+arguments = $(Process)
+
+error = server_data/test.err.$(Process)
+
+output = server_data/test.out.$(Process)
+
+getenv = True
+
+log = server_data/test.log.$(Process)
+
+request_memory = 1500
+
+request_cpus = 3
+
+queue 1

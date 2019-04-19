@@ -2,9 +2,9 @@ import numpy as np
 from typing import Dict, Tuple
 from collections import defaultdict
 from tqdm import tqdm
-
-from .data_reader import DataReader
-from .aer import read_naacl_alignments, AERSufficientStatistics
+import dill as pickle
+from data_reader import DataReader
+from aer import read_naacl_alignments, AERSufficientStatistics
 
 NULL_TOKEN = 'NULL'
 
@@ -12,6 +12,8 @@ NULL_TOKEN = 'NULL'
 class IBM:
     def __init__(self,
                  ibm_type: str,
+                 init_type: str,
+                 serialize_params: bool,
                  source_path_train: str,
                  target_path_train: str,
                  source_path_valid: str,
@@ -20,11 +22,22 @@ class IBM:
         assert ibm_type in ['IBM1', 'IBM2'], 'Incorrect IBM type, should be either IBM1 or IBM2'
         self.ibm_type = ibm_type
 
+        assert init_type in ['uniform', 'ibm1'], 'Incorrect IBM type, should be either IBM1 or IBM2'
+
+        self.serialize_params = serialize_params
         self.train_data_reader = DataReader(source_path_train, target_path_train)
         self.valid_data_reader = DataReader(source_path_valid, target_path_valid)
 
         init_ef_norm = 1 / self.train_data_reader.n_target_types
-        self.f_given_e: Dict[Tuple[str, str], float] = defaultdict(lambda: init_ef_norm)
+
+        if init_type == 'uniform':
+            self.f_given_e: Dict[Tuple[str, str], float] = defaultdict(lambda: init_ef_norm)
+
+        elif init_type == 'ibm1':
+            with open('translation_probs_IBM1.pickle', 'rb') as f:
+                self.f_given_e = pickle.load(f)
+
+            self.f_given_e: Dict[Tuple[str, str], float] = defaultdict(lambda: init_ef_norm)
 
         if ibm_type == 'IBM2':
             init_align = 1 / max(map(len, self.train_data_reader.source))
@@ -81,6 +94,11 @@ class IBM:
                     self.align_probs[x] = c / norm_align_probs
 
             self.validation(iteration)
+
+        if self.serialize_params:
+            with open('translation_probs_{}.pickle'.format(self.ibm_type), 'wb') as f:
+                prob_dict = self.f_given_e
+                pickle.dump(prob_dict, f)
 
     def calc_ef_prob(self, wf: str, we: str, e_pos: int, f_pos: int, len_e: int, len_f: int):
         if self.ibm_type == 'IBM2':
