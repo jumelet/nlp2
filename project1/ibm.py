@@ -22,7 +22,7 @@ class IBM:
         assert ibm_type in ['IBM1', 'IBM2'], 'Incorrect IBM type, should be either IBM1 or IBM2'
         self.ibm_type = ibm_type
 
-        assert init_type in ['uniform', 'ibm1'], 'Incorrect IBM type, should be either IBM1 or IBM2'
+        assert init_type in ['uniform', 'ibm1'], 'Incorrect init type, should be either uniform or ibm1'
 
         self.serialize_params = serialize_params
         self.train_data_reader = DataReader(source_path_train, target_path_train)
