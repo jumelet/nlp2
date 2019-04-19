@@ -7,8 +7,10 @@
         2. random (with 3 different seeds)
         3. with a run of IBM1 (see Collin's notes)
     - train
-- Evaluate IBM 1 & 2 with test data
-
+- Neural IBM
+    - complete `neuralibm1.py`
+    - train
+- Evaluate IBM 1, IBM 2,  with test data
 
 ### Paper
 
@@ -23,3 +25,4 @@
     - POS tags
         - source POS --> target POS 
         - sequences of POS for which errors are frequent
+
