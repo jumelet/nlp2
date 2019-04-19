@@ -37,7 +37,6 @@ class IBM:
             with open('translation_probs_IBM1.pickle', 'rb') as f:
                 self.f_given_e = pickle.load(f)
 
-            self.f_given_e: Dict[Tuple[str, str], float] = defaultdict(lambda: init_ef_norm)
 
         if ibm_type == 'IBM2':
             init_align = 1 / max(map(len, self.train_data_reader.source))
