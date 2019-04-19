@@ -1,11 +1,13 @@
 ### Programming
 
-- debug IBM 1
-- debug IBM 2
-- IBM2 initialisations
-    - random (with 3 different seeds)
-    - with a run of IBM1 (see Collin's notes)
-- write ibm.test() for testing data
+- IBM1: currently training
+- IBM2 
+    - initialisations
+        1. uniform
+        2. random (with 3 different seeds)
+        3. with a run of IBM1 (see Collin's notes)
+    - train
+- Evaluate IBM 1 & 2 with test data
 
 
 ### Paper
@@ -14,11 +16,10 @@
 - model: technical description of models
 
 
-### Meeting
+### Experiments
 
-- discuss experiments
-    - initialisation
-    - error analysis
-        - POS tags
-            - source POS --> target POS 
-            - sequences of POS for which errors are frequent
+- initialisations
+- error analysis
+    - POS tags
+        - source POS --> target POS 
+        - sequences of POS for which errors are frequent
