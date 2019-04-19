@@ -10,7 +10,7 @@
 - Neural IBM
     - complete `neuralibm1.py`
     - train
-- Evaluate IBM 1, IBM 2,  with test data
+- Evaluate IBM 1, IBM 2, Neural IBM with test data
 
 ### Paper
 
