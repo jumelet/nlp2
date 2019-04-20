@@ -1,7 +1,7 @@
 import numpy as np
 import tensorflow as tf
-from aer import read_naacl_alignments, AERSufficientStatistics
-from utils import iterate_minibatches, prepare_data
+from project1.aer import read_naacl_alignments, AERSufficientStatistics
+from project1.utils import iterate_minibatches, prepare_data
 
 # for TF 1.1
 import tensorflow

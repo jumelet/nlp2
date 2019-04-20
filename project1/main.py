@@ -1,4 +1,4 @@
-from ibm import IBM
+from project1.ibm import IBM
 
 ibm1 = IBM('IBM1',
            'uniform',
