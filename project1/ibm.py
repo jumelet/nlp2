@@ -155,6 +155,8 @@ class IBM:
 
         for source, target in self.valid_data_reader.get_parallel_data():
 
+            source = [NULL_TOKEN] + source
+
             len_e = len(source)
             len_f = len(target)
             links = set()
@@ -165,8 +167,11 @@ class IBM:
                         for (e_pos, we) in enumerate(source)
                     ]
                 )
-                link = (1 + maxlink, 1 + f_pos)
-                links.add(link)
+                link = (maxlink, 1 + f_pos)
+
+                # Do not add links that align target words to the NULL token
+                if maxlink != 0:
+                    links.add(link)
             predictions.append(links)
 
         for gold, pred in zip(self.gold_links, predictions):
