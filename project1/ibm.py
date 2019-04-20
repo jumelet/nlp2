@@ -1,5 +1,5 @@
 import numpy as np
-from typing import Dict, Tuple
+from typing import Dict, Tuple, List
 from collections import defaultdict
 from tqdm import tqdm
 import dill as pickle
@@ -18,7 +18,8 @@ class IBM:
                  target_path_train: str,
                  source_path_valid: str,
                  target_path_valid: str,
-                 gold_path_valid: str) -> None:
+                 gold_path_valid: str,
+                 seeds=None) -> None:
 
         assert ibm_type.lower() in ['ibm1', 'ibm2'], \
             "Incorrect IBM model type, should be either 'IBM1' or 'IBM2'"
@@ -39,15 +40,52 @@ class IBM:
             with open('translation_probs_IBM1.pickle', 'rb') as f:
                 self.f_given_e = pickle.load(f)
         elif self.init_type == 'random':
-            raise NotImplementedError('Random initialisation not yet implemented!')
+            if not seeds:
+                seeds = [1, 2, 3]
+            self.seeds = seeds
+            self.models = []
 
-        if ibm_type == 'ibm2':
+        if self.ibm_type == 'ibm2':
             init_align = 1 / max(map(len, self.train_data_reader.source))
             self.align_probs: Dict[int, float] = defaultdict(lambda: init_align)
 
         self.gold_links = read_naacl_alignments(gold_path_valid)
 
+
     def train(self, n_iter: int) -> None:
+        if self.init_type != 'random':
+            self._train(n_iter)
+        else:
+            for run_idx, seed in enumerate(self.seeds, start=1):
+                print('Run {} with random initialisation.'.format(run_idx))
+                np.random.seed(seed)
+                self.f_given_e: Dict[Tuple[str, str], float] = defaultdict(lambda: np.random.random())
+
+                _, aers = self._train(n_iter)
+                self.models.append((np.copy(self.f_given_e), aers[-1]))
+
+            # Compute aggregate model statistics
+            _, models_aer = zip(*self.models)
+            print('AER: mean {:.3f}  std: {:.3f}'.format(np.mean(models_aer), np.std(models_aer)))
+
+            # Select the best model based on its AER
+            best_model_idx = np.argmin(models_aer).item()
+            best_aer = models_aer[best_model_idx]
+
+            print('Best model: {}.  AER: {:.3f}'.format(best_model_idx+1, best_aer))
+
+            # Reset probabilities according to best model
+            self.f_given_e = self.models[best_model_idx][0]
+
+        if self.serialize_params:
+            with open('translation_probs_{}.pickle'.format(self.ibm_type), 'wb') as f:
+                prob_dict = self.f_given_e
+                pickle.dump(prob_dict, f)
+
+    def _train(self, n_iter: int) -> Tuple[List[float], List[float]]:
+        training_log_likelihoods = []
+        aers = []
+
         for iteration in range(n_iter):
             counts_ef = defaultdict(float)
             counts_e = defaultdict(float)
@@ -95,12 +133,12 @@ class IBM:
                 for x, c in counts_align.items():
                     self.align_probs[x] = c / norm_align_probs
 
-            self.validation(iteration)
+            aer = self.validation(iteration)
+            aers.append(aer)
 
-        if self.serialize_params:
-            with open('translation_probs_{}.pickle'.format(self.ibm_type), 'wb') as f:
-                prob_dict = self.f_given_e
-                pickle.dump(prob_dict, f)
+        return (training_log_likelihoods, aers)
+
+
 
     def calc_ef_prob(self, wf: str, we: str, e_pos: int, f_pos: int, len_e: int, len_f: int):
         if self.ibm_type == 'ibm2':
@@ -110,7 +148,7 @@ class IBM:
 
         return self.f_given_e[wf, we]
 
-    def validation(self, iteration: int) -> None:
+    def validation(self, iteration: int) -> float:
         print('Validation...')
         metric = AERSufficientStatistics()
         predictions = []
@@ -136,6 +174,8 @@ class IBM:
 
         aer = metric.aer()
         print(f'AER: {iteration} {aer:.3f}')
+
+        return aer
 
     @staticmethod
     def get_jump(e_pos: int, f_pos: int, len_e: int, len_f: int) -> int:
