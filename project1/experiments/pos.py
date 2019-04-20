@@ -8,6 +8,7 @@ import numpy as np
 
 
 def read_pos(pos_path: str, corpus_path: str):
+    """ Reads the pos tags and original corpus of source & target. """
     with open(pos_path, 'r') as f:
         pos = [p.strip().split(' ') for p in f.read().strip().split('\n')]
 
@@ -21,6 +22,10 @@ def read_pos(pos_path: str, corpus_path: str):
 
 
 def read_alignments(alignment_path: str):
+    """ Reads the gold alignments. Returns 3 dictionary, containing all,
+    sure and possible alignemts. Dictionaries map a sentence key to a list of
+    (a_s, a_t) links.
+    """
     align = defaultdict(list)
     align_s = defaultdict(list)
     align_p = defaultdict(list)
@@ -36,15 +41,21 @@ def read_alignments(alignment_path: str):
     return align, align_s, align_p
 
 
-def calc_pos_alignments(en, fr, align_s, align_p, enpos, frpos):
+def calc_pos_alignments(en, fr, align_s, align_p, enpos, frpos, probs_path: str):
+    """
+    Calculates the alignments and maps these to the corresponding POS tags.
+    Returns 3 dictionaries, corresponding to the sure, possible and wrong alignments.
+    """
     sys.path.append(os.path.expanduser('..'))
-    with open('../pickles/translation_probs_IBM1.pickle', 'rb') as f:
-        probs = pickle.load(f)
+    with open(probs_path, 'rb') as file:
+        probs = pickle.load(file)
 
     def get_alignments(s, t):
         a = []
         for i, wt in enumerate(t, start=1):
-            a.append((np.argmax([probs[wt, ws] for ws in s]), i))
+            maxlink = np.argmax([probs[wt, ws] for ws in s])
+            if maxlink != 0:
+                a.append((maxlink, i))
         return a
 
     pos_s = Counter()
@@ -77,7 +88,10 @@ fr_pos, fr_sen = read_pos('../data/tagged/dev.pos.f', '../data/validation/dev.f'
 
 all_a, sure_a, prob_a = read_alignments('../data/validation/dev.wa.nonullalign')
 
-sure_pos_a, prob_pos_a, wrong_pos_a = calc_pos_alignments(en_sen, fr_sen, sure_a, prob_a, en_pos, fr_pos)
+sure_pos_a, prob_pos_a, wrong_pos_a = calc_pos_alignments(en_sen, fr_sen,
+                                                          sure_a, prob_a,
+                                                          en_pos, fr_pos,
+                                                          '../pickles/translation_probs_IBM1.pickle')
 
 mc = 10
 print('10 most common pos2pos in sure links:')
