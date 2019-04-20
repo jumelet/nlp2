@@ -18,27 +18,30 @@ class IBM:
                  target_path_train: str,
                  source_path_valid: str,
                  target_path_valid: str,
-                 gold_path_valid) -> None:
-        assert ibm_type in ['IBM1', 'IBM2'], 'Incorrect IBM type, should be either IBM1 or IBM2'
-        self.ibm_type = ibm_type
+                 gold_path_valid: str) -> None:
 
-        assert init_type in ['uniform', 'ibm1'], 'Incorrect init type, should be either uniform or ibm1'
+        assert ibm_type.lower() in ['ibm1', 'ibm2'], \
+            "Incorrect IBM model type, should be either 'IBM1' or 'IBM2'"
+        self.ibm_type = ibm_type.lower()
+
+        assert init_type.lower() in ['uniform', 'random', 'ibm1'], \
+            "Incorrect init type, should be 'uniform', 'random', or 'IBM1'"
+        self.init_type = init_type.lower()
 
         self.serialize_params = serialize_params
         self.train_data_reader = DataReader(source_path_train, target_path_train)
         self.valid_data_reader = DataReader(source_path_valid, target_path_valid)
 
-        init_ef_norm = 1 / self.train_data_reader.n_target_types
-
-        if init_type == 'uniform':
+        if self.init_type == 'uniform':
+            init_ef_norm = 1 / self.train_data_reader.n_target_types
             self.f_given_e: Dict[Tuple[str, str], float] = defaultdict(lambda: init_ef_norm)
-
-        elif init_type == 'ibm1':
+        elif self.init_type == 'ibm1':
             with open('translation_probs_IBM1.pickle', 'rb') as f:
                 self.f_given_e = pickle.load(f)
+        elif self.init_type == 'random':
+            raise NotImplementedError('Random initialisation not yet implemented!')
 
-
-        if ibm_type == 'IBM2':
+        if ibm_type == 'ibm2':
             init_align = 1 / max(map(len, self.train_data_reader.source))
             self.align_probs: Dict[int, float] = defaultdict(lambda: init_align)
 
@@ -87,7 +90,7 @@ class IBM:
             for (we, wf), c in counts_ef.items():
                 self.f_given_e[wf, we] = c / counts_e[we]
 
-            if self.ibm_type == 'IBM2':
+            if self.ibm_type == 'ibm2':
                 norm_align_probs = np.sum(list(counts_align.values()))
                 for x, c in counts_align.items():
                     self.align_probs[x] = c / norm_align_probs
@@ -100,7 +103,7 @@ class IBM:
                 pickle.dump(prob_dict, f)
 
     def calc_ef_prob(self, wf: str, we: str, e_pos: int, f_pos: int, len_e: int, len_f: int):
-        if self.ibm_type == 'IBM2':
+        if self.ibm_type == 'ibm2':
             # TODO: add switch between jump/positional
             jump = self.get_jump(e_pos, f_pos, len_e, len_f)
             return self.f_given_e[wf, we] * self.align_probs[jump]
