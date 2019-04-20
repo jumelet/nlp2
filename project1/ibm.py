@@ -3,8 +3,8 @@ from typing import Dict, Tuple
 from collections import defaultdict
 from tqdm import tqdm
 import dill as pickle
-from data_reader import DataReader
-from aer import read_naacl_alignments, AERSufficientStatistics
+from project1.data_reader import DataReader
+from project1.aer import read_naacl_alignments, AERSufficientStatistics
 
 NULL_TOKEN = 'NULL'
 
