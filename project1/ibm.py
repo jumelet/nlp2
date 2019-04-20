@@ -62,7 +62,7 @@ class IBM:
                 len_e = len(e)
                 len_f = len(f)
 
-                log_ll_normalizer = np.log(1 / len_e) if self.ibm_type == 'IBM1' else 0
+                log_ll_normalizer = np.log(1 / len_e) if self.ibm_type == 'ibm1' else 0
 
                 for f_pos, wf in enumerate(f):
                     delta_normalizer = 0
@@ -78,7 +78,7 @@ class IBM:
 
                         counts_ef[we, wf] += delta
                         counts_e[we] += delta
-                        if self.ibm_type == 'IBM2':
+                        if self.ibm_type == 'ibm2':
                             jump = self.get_jump(e_pos, f_pos, len_e, len_f)
                             counts_align[jump] += delta
 
