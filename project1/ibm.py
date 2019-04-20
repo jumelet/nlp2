@@ -81,6 +81,10 @@ class IBM:
             with open('translation_probs_{}.pickle'.format(self.ibm_type), 'wb') as f:
                 prob_dict = self.f_given_e
                 pickle.dump(prob_dict, f)
+            if self.ibm_type == 'IBM2':
+               with open('alignment_probs_IBM2.pickle', 'wb') as af:
+                   align_dict = self.align_probs
+                   pickle.dump(align_dict, af)
 
     def _train(self, n_iter: int) -> Tuple[List[float], List[float]]:
         training_log_likelihoods = []
