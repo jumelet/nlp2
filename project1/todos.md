@@ -6,7 +6,7 @@
 - IBM2 
     - initialisations
         1. ~~uniform~~
-        2. random (with 3 different seeds)
+        2. ~~random (with 3 different seeds)~~
         3. ~~with a run of IBM1 (see Collin's notes)~~
     - train
     - plot training log-likelihood and AER
