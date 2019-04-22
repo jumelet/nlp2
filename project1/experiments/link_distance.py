@@ -1,7 +1,7 @@
 import sys
 import os
-import pickle
 import numpy as np
+import pickle
 from collections import Counter
 from pprint import pprint
 import matplotlib.pyplot as plt
@@ -9,15 +9,32 @@ import matplotlib.pyplot as plt
 from project1.experiments.pos import read_alignments
 
 class AlignmentModel(object):
-    def __init__(self, model_path):
+    def __init__(self, translation_model_path: str, alignment_model_path=None) -> None:
         sys.path.append(os.path.expanduser('..'))
-        with open(model_path, 'rb') as file:
-            self.probs = pickle.load(file)
+
+        with open(translation_model_path, 'rb') as file:
+            self.translation_probs = pickle.load(file)
+
+        self.alignment_probs = None
+        if alignment_model_path:
+            with open(alignment_model_path, 'rb') as file:
+                self.alignment_probs = pickle.load(file)
+
+    @staticmethod
+    def get_jump(e_pos: int, f_pos: int, len_e: int, len_f: int) -> int:
+        return e_pos - np.floor(f_pos * (len_e / len_f))
 
     def get_links(self, source, target):
+        len_s, len_t = len(source), len(target)
         links = set()
         for i, wt in enumerate(target, start=1):
-            maxlink = np.argmax([self.probs[wt, ws] for ws in source])
+            if self.alignment_probs:
+                maxlink = np.argmax(
+                    [self.translation_probs[wt, ws] * self.alignment_probs[ self.get_jump(j, i-1, len_s, len_t) ]
+                     for j, ws in enumerate(source)]
+                )
+            else:
+                maxlink = np.argmax([self.translation_probs[wt, ws] for ws in source])
             if maxlink != 0:
                 links.add((maxlink, i))
         return list(links)
@@ -38,12 +55,16 @@ def link_distance_in_errors(model, en_corpus_path: str, fr_corpus_path: str, ali
     errors_prob = Counter()
     errors_all = Counter()
 
+
     for idx in en.keys():
         e = ['NULL'] + en[idx]
         f = fr[idx]
         alignments = model.get_links(e, f)
 
         for a in alignments:
+
+            ae, af = a
+            pred_distance = abs(af - ae)
 
             if a in sure_a[idx]:
                 continue
@@ -52,18 +73,20 @@ def link_distance_in_errors(model, en_corpus_path: str, fr_corpus_path: str, ali
 
             # Else, if the predicted alignment is incorrect...
 
-            ae, af = a
-            pred_distance = abs(af - ae)
-
             for (gold_ae, gold_af) in sure_a[idx]:
                 if gold_af == af:
                     gold_distance = abs(gold_af - gold_ae)
+                    if gold_distance - pred_distance == 0:
+                        print(a, (gold_ae, gold_af))
                     errors_sure[gold_distance - pred_distance] += 1
                     errors_all[gold_distance - pred_distance] += 1
+
 
             for (gold_ae, gold_af) in prob_a[idx]:
                 if gold_af == af:
                     gold_distance = abs(gold_af - gold_ae)
+                    if gold_distance - pred_distance == 0:
+                        print(a, (gold_ae, gold_af))
                     errors_prob[gold_distance - pred_distance] += 1
                     errors_all[gold_distance - pred_distance] += 1
 
@@ -81,7 +104,9 @@ def plot_distance_errors(errors):
 
 
 if __name__ == '__main__':
-    m = AlignmentModel('../pickles/translation_probs_IBM1.pickle')
+    # m = AlignmentModel('../pickles/translation_probs_IBM1.pickle')
+    m = AlignmentModel('../pickles/translation_probs_IBM2.pickle', '../pickles/alignment_probs_IBM2.pickle')
+
     errors_all, errors_s, errors_p = link_distance_in_errors(m,
                                      '../data/validation/dev.e',
                                      '../data/validation/dev.f',
