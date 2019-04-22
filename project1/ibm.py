@@ -1,345 +1,191 @@
+import numpy as np
+from typing import Dict, Tuple, List
 from collections import defaultdict
 from tqdm import tqdm
-import numpy as np
+import dill as pickle
+from project1.data_reader import DataReader
+from project1.aer import read_naacl_alignments, AERSufficientStatistics
 
-from .data_reader import DataReader
-from .aer import read_naacl_alignments, AERSufficientStatistics
-
-NULL_TOKEN = '[NULL]'
-EPSILON = 1e-12
+NULL_TOKEN = 'NULL'
 
 
-class IBM1(object):
-    """
-    IBM Model 1.
+class IBM:
+    def __init__(self,
+                 ibm_type: str,
+                 init_type: str,
+                 serialize_params: bool,
+                 source_path_train: str,
+                 target_path_train: str,
+                 source_path_valid: str,
+                 target_path_valid: str,
+                 gold_path_valid: str,
+                 seeds=None) -> None:
 
-    Attributes
-    ----------
-    translation_probs: Dict[Tuple[str, str] -> float]
-        A matrix of probabilities indicating the likelihood of all possible translation pairs.
+        assert ibm_type.lower() in ['ibm1', 'ibm2'], \
+            "Incorrect IBM model type, should be either 'IBM1' or 'IBM2'"
+        self.ibm_type = ibm_type.lower()
 
-    Methods
-    -------
-    train(n_iterations)
-        Runs the Expectation Maximization algorithm to estimate translation probabilities.
-    """
+        assert init_type.lower() in ['uniform', 'random', 'ibm1'], \
+            "Incorrect init type, should be 'uniform', 'random', or 'IBM1'"
+        self.init_type = init_type.lower()
 
-    def __init__(self, source_path, target_path, source_path_valid, target_path_valid, gold_path_valid):
-        """
-        :param source_path: str
-            The path to the source corpus. Whitespace separates tokens, newline separates sequences (sentences).
-        :param target_path: str
-            The path to the target corpus. Whitespace separates tokens, newline separates sequences (sentences).
-            The target corpus should have the same length of the source corpus.
-        """
-        self.training_data = DataReader(source_path, target_path)
-        self.validation_data = DataReader(source_path_valid, target_path_valid)
-        self.gold_links = read_naacl_alignments(gold_path_valid)
+        self.serialize_params = serialize_params
+        self.train_data_reader = DataReader(source_path_train, target_path_train)
+        self.valid_data_reader = DataReader(source_path_valid, target_path_valid)
 
-        init_norm = 1 / (self.training_data.n_source_types * self.training_data.n_target_types)
-        self.translation_probs = defaultdict(lambda: init_norm)
+        if self.init_type == 'uniform':
+            init_ef_norm = 1 / self.train_data_reader.n_target_types
+            self.f_given_e: Dict[Tuple[str, str], float] = defaultdict(lambda: init_ef_norm)
+        elif self.init_type == 'ibm1':
+            with open('translation_probs_IBM1.pickle', 'rb') as f:
+                self.f_given_e = pickle.load(f)
+        elif self.init_type == 'random':
+            if not seeds:
+                seeds = [1, 2, 3]
+            self.seeds = seeds
+            self.models = []
 
-
-    def train(self, n_iterations):
-        """
-        Runs the Expectation Maximization algorithm to estimate translation probabilities.
-
-        :param n_iterations: int
-            The number of EM iterations over the parallel corpus.
-        :return: None
-        """
-        print('Start training...')
-
-        # Collect convergence statistics
-        training_log_lik_per_epoch = []
-        validation_aer_per_epoch = []
-
-        for iter in range(n_iterations):
-
-            print('Epoch {}.'.format(iter))
-
-            # EXPECTATION MAXIMISATION
-            translation_counts = defaultdict(float)  # How often do 'e' and 'f' form a translation pair?
-            occurrence_counts = defaultdict(float)   # How often does 'e' appear in the corpus?
-            training_log_likelihood = 0
-
-            for (source, target) in tqdm(self.training_data.get_parallel_data(), total=len(self.training_data)):
-
-                # Add NULL token to naively cope with fertility
-                source = [NULL_TOKEN] + source
-
-                for t in target:
-
-                    # First compute normalisation constant for this target word 'f'.
-                    # It is necessary to update all counts involving 'f'.
-                    delta_denominator = 0
-                    for s in source:
-                        delta_denominator += self.translation_probs[(t, s)]
-
-                    # Now update the counts.
-                    for s in source:
-                        delta = self.translation_probs[(t, s)] / delta_denominator
-
-                        translation_counts[(s, t)] += delta
-                        occurrence_counts[s] += delta
-
-                    training_log_likelihood += np.log(np.max([self.translation_probs[(t, s)] for s in source]))
-
-            print('Training log-likelihood: {}'.format(training_log_likelihood))
-            training_log_lik_per_epoch.append(training_log_likelihood)
-
-            for (s, t) in translation_counts:
-                self.translation_probs[(t, s)] = translation_counts[(s, t)] / occurrence_counts[s]
-
-
-            # DECODING
-            print('Validation... ')
-            metric = AERSufficientStatistics()
-            predictions = []
-
-            for (source, target) in tqdm(self.validation_data.get_parallel_data(), total=len(self.validation_data)):
-
-                source = [NULL_TOKEN] + source
-
-                links = set()
-                for i, t in enumerate(target):
-                    # print((i,t), [(j,s) for (j, s) in enumerate(source)])
-                    link = (
-                        1 + np.argmax([self.translation_probs[(t,s)] for s in source]),
-                        1 + i
-                    )
-                    # print(link)
-                    links.add(link)
-                predictions.append(links)
-
-            for gold, pred in zip(self.gold_links, predictions):
-                metric.update(sure=gold[0], probable=gold[1], predicted=pred)
-
-            aer = metric.aer()
-            print('AER: {}'.format(iter, aer))
-            validation_aer_per_epoch.append(aer)
-
-        return training_log_lik_per_epoch, validation_aer_per_epoch
-
-
-class IBM2(object):
-    """
-    IBM Model 2.
-
-    Attributes
-    ----------
-    translation_probs: Dict[Tuple[str, str] -> float]
-        A matrix of probabilities indicating the likelihood of all possible translation pairs.
-
-    alignment_probs: Dict[Tuple[int, int, int, int] -> float]
-        Alignment probabilities q(j|i,l,m) indicating the likelihood of a target word at position j to be aligned with
-        source word i, given a source and a target sentence of length l and m respectively.
-
-    Methods
-    -------
-    train(n_iterations)
-        Runs the Expectation Maximization algorithm to estimate translation and alignment probabilities.
-    """
-
-    def __init__(self, source_path, target_path, source_path_valid, target_path_valid, gold_path_valid, alignment='positional'):
-        """
-        :param source_path: str
-            The path to the source corpus. Whitespace separates tokens, newline separates sequences (sentences).
-        :param target_path: str
-            The path to the target corpus. Whitespace separates tokens, newline separates sequences (sentences).
-            The target corpus should have the same length of the source corpus.
-        :param alignment: str
-            Positional alignment ('positional') or Vogel et al.'s jump distribution ('jump').
-        """
-        if alignment not in ['positional', 'jump']:
-            raise ValueError("Alignment can be 'positional' or according to a 'jump' distribution")
-        self.alignment = alignment
-
-        self.alignment_probs = defaultdict(lambda: EPSILON)
-        self.translation_probs = defaultdict(lambda: EPSILON)
-
-        self.training_data = DataReader(source_path, target_path)
-        self.validation_data = DataReader(source_path_valid, target_path_valid)
+        if self.ibm_type == 'ibm2':
+            init_align = 1 / max(map(len, self.train_data_reader.source))
+            self.align_probs: Dict[int, float] = defaultdict(lambda: init_align)
 
         self.gold_links = read_naacl_alignments(gold_path_valid)
 
 
-    def train(self, n_iterations):
-        if self.alignment == 'positional':
-            return self._train_positional(n_iterations)
+    def train(self, n_iter: int) -> None:
+        if self.init_type != 'random':
+            self._train(n_iter)
         else:
-            raise self._train_with_jumps(n_iterations)
+            for run_idx, seed in enumerate(self.seeds, start=1):
+                print('Run {} with random initialisation.'.format(run_idx))
+                np.random.seed(seed)
+                self.f_given_e: Dict[Tuple[str, str], float] = defaultdict(lambda: np.random.random())
 
+                _, aers = self._train(n_iter)
+                self.models.append((np.copy(self.f_given_e), aers[-1]))
 
-    def _train_with_jumps(self, n_iterations):
+            # Compute aggregate model statistics
+            _, models_aer = zip(*self.models)
+            print('AER: mean {:.3f}  std: {:.3f}'.format(np.mean(models_aer), np.std(models_aer)))
 
-        # Collect convergence statistics
-        training_log_lik_per_epoch = []
-        validation_aer_per_epoch = []
+            # Select the best model based on its AER
+            best_model_idx = np.argmin(models_aer).item()
+            best_aer = models_aer[best_model_idx]
 
-        for iter in range(n_iterations):
-            print('Epoch {}.'.format(iter))
+            print('Best model: {}.  AER: {:.3f}'.format(best_model_idx+1, best_aer))
 
-            # EXPECTATION MAXIMISATION
-            translation_counts = defaultdict(float)  # How often do 'e' and 'f' form a translation pair?
-            occurrence_counts = defaultdict(float)  # How often does 'e' appear in the corpus?
+            # Reset probabilities according to best model
+            self.f_given_e = self.models[best_model_idx][0]
+
+        if self.serialize_params:
+            with open('translation_probs_{}.pickle'.format(self.ibm_type), 'wb') as f:
+                prob_dict = self.f_given_e
+                pickle.dump(prob_dict, f)
+            if self.ibm_type == 'IBM2':
+               with open('alignment_probs_IBM2.pickle', 'wb') as af:
+                   align_dict = self.align_probs
+                   pickle.dump(align_dict, af)
+
+    def _train(self, n_iter: int) -> Tuple[List[float], List[float]]:
+        training_log_likelihoods = []
+        aers = []
+
+        for iteration in range(n_iter):
+            counts_ef = defaultdict(float)
+            counts_e = defaultdict(float)
+            counts_align = defaultdict(int)
             training_log_likelihood = 0
 
-            jump_counts = defaultdict(float)
+            # Expectation
+            for (e, f) in tqdm(self.train_data_reader.get_parallel_data(),
+                               total=len(self.train_data_reader)):
 
-            for (source, target) in tqdm(self.training_data.get_parallel_data(), total=len(self.training_data)):
+                e = [NULL_TOKEN] + e
+                len_e = len(e)
+                len_f = len(f)
 
-                # Add NULL token to naively cope with fertility
-                source = [NULL_TOKEN] + source
+                log_ll_normalizer = np.log(1 / len_e) if self.ibm_type == 'ibm1' else 0
 
-                l = len(source)
-                m = len(target)
+                for f_pos, wf in enumerate(f):
+                    delta_normalizer = 0
+                    log_likelihood = 0
+                    for e_pos, we in enumerate(e):
+                        ef_prob = self.calc_ef_prob(wf, we, e_pos, f_pos, len_e, len_f)
+                        delta_normalizer += ef_prob
 
-                for i, t in enumerate(target):
+                    for e_pos, we in enumerate(e):
+                        ef_prob = self.calc_ef_prob(wf, we, e_pos, f_pos, len_e, len_f)
+                        delta = ef_prob / delta_normalizer
+                        log_likelihood += ef_prob
 
-                    # First compute normalisation constant for this target word 'f'.
-                    # It is necessary to update all counts involving 'f'.
-                    delta_denominator = 0
-                    for (j, s) in enumerate(source):
-                        jump = i - np.floor(j * l/m)
-                        delta_denominator += self.alignment_probs[jump] * self.translation_probs[(t, s)]
+                        counts_ef[we, wf] += delta
+                        counts_e[we] += delta
+                        if self.ibm_type == 'ibm2':
+                            jump = self.get_jump(e_pos, f_pos, len_e, len_f)
+                            counts_align[jump] += delta
 
-                    # Now update the counts.
-                    for (j, s) in enumerate(source):
-                        delta = self.translation_probs[(t, s)] / delta_denominator
-
-                        translation_counts[(s, t)] += delta
-                        occurrence_counts[s] += delta
-
-                        jump = i - np.floor(j * l / m)
-                        jump_counts[jump] += delta
-
-
-                    training_log_likelihood += \
-                        np.log(
-                            np.max(
-                                [self.translation_probs[(t, s)] * self.alignment_probs[(j, i, l, m)]
-                                 for (j, s)
-                                 in enumerate(source)])
-                        )
+                    training_log_likelihood += np.log(log_likelihood) - log_ll_normalizer
 
             print('Training log-likelihood: {}'.format(training_log_likelihood))
-            training_log_lik_per_epoch.append(training_log_likelihood)
 
-            for (s, t) in translation_counts:
-                self.translation_probs[(t, s)] = translation_counts[(s, t)] / occurrence_counts[s]
+            # Maximization
+            for (we, wf), c in counts_ef.items():
+                self.f_given_e[wf, we] = c / counts_e[we]
 
-            tot_jump_count = sum(jump_counts.values())
-            for jump in jump_counts:
-                self.alignment_probs[jump] = jump_counts[jump] / tot_jump_count
+            if self.ibm_type == 'ibm2':
+                norm_align_probs = np.sum(list(counts_align.values()))
+                for x, c in counts_align.items():
+                    self.align_probs[x] = c / norm_align_probs
+
+            aer = self.validation(iteration)
+            aers.append(aer)
+
+        return (training_log_likelihoods, aers)
 
 
 
+    def calc_ef_prob(self, wf: str, we: str, e_pos: int, f_pos: int, len_e: int, len_f: int):
+        if self.ibm_type == 'ibm2':
+            # TODO: add switch between jump/positional
+            jump = self.get_jump(e_pos, f_pos, len_e, len_f)
+            return self.f_given_e[wf, we] * self.align_probs[jump]
 
-    def _train_positional(self, n_iterations):
-        """
-        Runs the Expectation Maximization algorithm to estimate translation and alignment probabilities.
+        return self.f_given_e[wf, we]
 
-        :param n_iterations: int
-            The number of EM iterations over the parallel corpus.
-        :return: None
-        """
-        print('Start training...')
+    def validation(self, iteration: int) -> float:
+        print('Validation...')
+        metric = AERSufficientStatistics()
+        predictions = []
 
-        # Collect convergence statistics
-        training_log_lik_per_epoch = []
-        validation_aer_per_epoch = []
+        for source, target in self.valid_data_reader.get_parallel_data():
 
-        for iter in range(n_iterations):
+            source = [NULL_TOKEN] + source
 
-            print('Epoch {}.'.format(iter))
+            len_e = len(source)
+            len_f = len(target)
+            links = set()
+            for f_pos, wf in enumerate(target):
+                maxlink = np.argmax(
+                    [
+                        self.calc_ef_prob(wf, we, e_pos, f_pos, len_e, len_f)
+                        for (e_pos, we) in enumerate(source)
+                    ]
+                )
+                link = (maxlink, 1 + f_pos)
 
-            # EXPECTATION MAXIMISATION
-            translation_counts = defaultdict(float)  # How often do 'e' and 'f' form a translation pair?
-            occurrence_counts = defaultdict(float)   # How often does 'e' appear in the corpus?
-            training_log_likelihood = 0
-
-            # How often does the ith target word align with the jth source word...
-            # given a target and a source sentence of length m and l respectively?
-            positional_alignment_counts = defaultdict(float)
-
-            # How often does an l-long source sentence align with an m-long target sentence?
-            length_alignment_counts = defaultdict(float)
-
-            for (source, target) in tqdm(self.training_data.get_parallel_data(), total=len(self.training_data)):
-
-                # Add NULL token to naively cope with fertility
-                source = [NULL_TOKEN] + source
-
-                l = len(source)
-                m = len(target)
-
-                for i, t in enumerate(target):
-
-                    # First compute normalisation constant for this target word 'f'.
-                    # It is necessary to update all counts involving 'f'.
-                    delta_denominator = 0
-                    for (j, s) in enumerate(source):
-                        delta_denominator += self.alignment_probs[(j, i, l, m)] * self.translation_probs[(t, s)]
-
-                    # Now update the counts.
-                    for (j, s) in enumerate(source):
-                        delta = self.translation_probs[(t, s)] / delta_denominator
-
-                        translation_counts[(s, t)] += delta
-                        occurrence_counts[s] += delta
-
-                        positional_alignment_counts[(j, i, l, m)] += delta
-                        length_alignment_counts[(i, l, m)] += delta
-
-                    training_log_likelihood += \
-                        np.log(
-                            np.max(
-                                [self.translation_probs[(t, s)] * self.alignment_probs[(j, i, l, m)]
-                                 for (j, s)
-                                 in enumerate(source)])
-                        )
-
-            print('Training log-likelihood: {}'.format(training_log_likelihood))
-            training_log_lik_per_epoch.append(training_log_likelihood)
-
-            for (s,t) in translation_counts:
-                self.translation_probs[(t, s)] = translation_counts[(s, t)] / occurrence_counts[s]
-
-            for (j, i, l, m) in positional_alignment_counts:
-                self.alignment_probs[(j, i, l, m)] = \
-                    positional_alignment_counts[(j, i, l, m)] / length_alignment_counts[(i, l, m)]
-
-            # DECODING
-            print('Validation...')
-            metric = AERSufficientStatistics()
-            predictions = []
-
-            for (source, target) in tqdm(self.validation_data.get_parallel_data(), total=len(self.validation_data)):
-
-                source = [NULL_TOKEN] + source
-
-                l = len(source)
-                m = len(target)
-                links = set()
-                for i, t in enumerate(target):
-                    link = (
-                        1 + np.argmax(
-                            [self.translation_probs[(t, s)] * self.alignment_probs[(j, i, l, m)]
-                             for (j, s)
-                             in enumerate(source)]),
-                        1 + i
-                    )
+                # Do not add links that align target words to the NULL token
+                if maxlink != 0:
                     links.add(link)
-                predictions.append(links)
+            predictions.append(links)
 
-            for gold, pred in zip(self.gold_links, predictions):
-                metric.update(sure=gold[0], probable=gold[1], predicted=pred)
+        for gold, pred in zip(self.gold_links, predictions):
+            metric.update(sure=gold[0], probable=gold[1], predicted=pred)
 
-            aer = metric.aer()
-            print('AER: {}'.format(iter, aer))
-            validation_aer_per_epoch.append(aer)
+        aer = metric.aer()
+        print(f'AER: {iteration} {aer:.3f}')
 
-        return training_log_lik_per_epoch, validation_aer_per_epoch
+        return aer
 
-
+    @staticmethod
+    def get_jump(e_pos: int, f_pos: int, len_e: int, len_f: int) -> int:
+        return e_pos - np.floor(f_pos * (len_e / len_f))

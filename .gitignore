@@ -1,2 +1,6 @@
 project1/data/training
 project1/data/validation
+project1/data/test
+project1/__pycache__/
+.idea
+**/.DS_Store
