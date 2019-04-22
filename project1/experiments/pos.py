@@ -151,41 +151,42 @@ def calc_pos_sequence_alignments(seq_len, en, fr, align_s, align_p, enpos, frpos
     return en_seq_s, en_seq_p, en_seq_wrong, fr_seq_s, fr_seq_p, fr_seq_wrong
 
 
-en_pos, en_sen = read_pos('../data/tagged/dev.pos.e', '../data/validation/dev.e')
-fr_pos, fr_sen = read_pos('../data/tagged/dev.pos.f', '../data/validation/dev.f')
+if __name__ == '__main__':
+    en_pos, en_sen = read_pos('../data/tagged/dev.pos.e', '../data/validation/dev.e')
+    fr_pos, fr_sen = read_pos('../data/tagged/dev.pos.f', '../data/validation/dev.f')
 
-all_a, sure_a, prob_a = read_alignments('../data/validation/dev.wa.nonullalign')
+    all_a, sure_a, prob_a = read_alignments('../data/validation/dev.wa.nonullalign')
 
-sure_pos_a, prob_pos_a, wrong_pos_a = calc_pos_alignments(en_sen, fr_sen,
-                                                          sure_a, prob_a,
-                                                          en_pos, fr_pos,
-                                                          '../pickles/translation_probs_IBM1.pickle')
+    sure_pos_a, prob_pos_a, wrong_pos_a = calc_pos_alignments(en_sen, fr_sen,
+                                                              sure_a, prob_a,
+                                                              en_pos, fr_pos,
+                                                              '../pickles/translation_probs_IBM1.pickle')
 
-mc = 10
-print('10 most common pos2pos in sure links:')
-pprint(sure_pos_a.most_common(mc))
+    mc = 10
+    print('10 most common pos2pos in sure links:')
+    pprint(sure_pos_a.most_common(mc))
 
-print('\n10 most common pos2pos in probable-sure links:')
-pprint(prob_pos_a.most_common(mc))
+    print('\n10 most common pos2pos in probable-sure links:')
+    pprint(prob_pos_a.most_common(mc))
 
-print('\n10 most common wrong pos2pos links')
-pprint(wrong_pos_a.most_common(mc))
+    print('\n10 most common wrong pos2pos links')
+    pprint(wrong_pos_a.most_common(mc))
 
-en_seq_s, en_seq_p, en_seq_wrong, fr_seq_s, fr_seq_p, fr_seq_wrong = calc_pos_sequence_alignments(
-                                                                        3,
-                                                                        en_sen, fr_sen,
-                                                                        sure_a, prob_a,
-                                                                        en_pos, fr_pos,
-                                                                        '../pickles/translation_probs_IBM1.pickle')
+    en_seq_s, en_seq_p, en_seq_wrong, fr_seq_s, fr_seq_p, fr_seq_wrong = calc_pos_sequence_alignments(
+                                                                            3,
+                                                                            en_sen, fr_sen,
+                                                                            sure_a, prob_a,
+                                                                            en_pos, fr_pos,
+                                                                            '../pickles/translation_probs_IBM1.pickle')
 
-print('The 10 most common POS sequences in sure links:')
-pprint(en_seq_s.most_common(mc))
-# pprint(fr_seq_s.most_common(mc))
+    print('The 10 most common POS sequences in sure links:')
+    pprint(en_seq_s.most_common(mc))
+    # pprint(fr_seq_s.most_common(mc))
 
-print('\nThe 10 most common POS sequences in probable-sure links:')
-pprint(en_seq_p.most_common(mc))
-# pprint(fr_seq_p.most_common(mc))
+    print('\nThe 10 most common POS sequences in probable-sure links:')
+    pprint(en_seq_p.most_common(mc))
+    # pprint(fr_seq_p.most_common(mc))
 
-print('\nThe 10 POS sequences containing most wrong links')
-pprint(en_seq_wrong.most_common(mc))
-# pprint(fr_seq_wrong.most_common(mc))
+    print('\nThe 10 POS sequences containing most wrong links')
+    pprint(en_seq_wrong.most_common(mc))
+    # pprint(fr_seq_wrong.most_common(mc))
