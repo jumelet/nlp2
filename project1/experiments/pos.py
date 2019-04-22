@@ -82,6 +82,7 @@ def calc_pos_alignments(en, fr, align_s, align_p, enpos, frpos, probs_path: str)
 
     return pos_s, pos_p, pos_wrong
 
+
 def calc_pos_sequence_alignments(seq_len, en, fr, align_s, align_p, enpos, frpos, probs_path: str):
     """
     Calculates the alignments and maps these to the corresponding sequences of POS tags.
