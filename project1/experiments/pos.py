@@ -7,6 +7,14 @@ from pprint import pprint
 import numpy as np
 
 
+# MODEL PROBS READING #
+PROBS_PATH = '../pickles/translation_probs_IBM1.pickle'
+sys.path.append(os.path.expanduser('..'))
+with open(PROBS_PATH, 'rb') as file:
+    PROBS = pickle.load(file)
+
+
+# POS & ALIGNMENT READING #
 def read_pos(pos_path: str, corpus_path: str):
     """ Reads the pos tags and original corpus of source & target. """
     with open(pos_path, 'r') as f:
@@ -41,19 +49,17 @@ def read_alignments(alignment_path: str):
     return align, align_s, align_p
 
 
-def calc_pos_alignments(en, fr, align_s, align_p, enpos, frpos, probs_path: str):
+# POS ALIGNMENTS #
+def calc_pos_alignments(en, fr, align_s, align_p, enpos, frpos):
     """
     Calculates the alignments and maps these to the corresponding POS tags.
     Returns 3 dictionaries, corresponding to the sure, possible and wrong alignments.
     """
-    sys.path.append(os.path.expanduser('..'))
-    with open(probs_path, 'rb') as file:
-        probs = pickle.load(file)
 
     def get_alignments(s, t):
         a = []
         for i, wt in enumerate(t, start=1):
-            maxlink = np.argmax([probs[wt, ws] for ws in s])
+            maxlink = np.argmax([PROBS[wt, ws] for ws in s])
             if maxlink != 0:
                 a.append((maxlink, i))
         return a
@@ -83,20 +89,54 @@ def calc_pos_alignments(en, fr, align_s, align_p, enpos, frpos, probs_path: str)
     return pos_s, pos_p, pos_wrong
 
 
-def calc_pos_sequence_alignments(seq_len, en, fr, align_s, align_p, enpos, frpos, probs_path: str):
+def calc_unk_accuracy(en, fr, align_s, align_p):
+    vocab_e = set()
+    vocab_f = set()
+    for wf, we in PROBS.keys():
+        vocab_e.add(we)
+        vocab_f.add(wf)
+
+    n_unk = 0
+    n_total = 0
+
+    defaultprob = PROBS['bla', 'bla']
+    print(defaultprob)
+
+    def get_alignments(s, t):
+        a = []
+        unk_a = []
+        for i, wt in enumerate(t, start=1):
+            if wt not in vocab_f:
+                print(wt)
+            maxlink = np.argmax([PROBS.get((wt, ws), defaultprob) for ws in s])
+            if maxlink != 0 and (wt, s[maxlink]) not in PROBS:
+                print(f'{maxlink}\t{PROBS[wt, s[maxlink]]:.6f}\t\t{s[maxlink]}\t{wt}')
+                unk_a.append((maxlink, i))
+            elif maxlink != 0:
+                a.append((maxlink, i))
+        return a, unk_a
+
+    for idx in en.keys():
+        e = ['NULL'] + en[idx]
+        f = fr[idx]
+        alignments, unk_alignments = get_alignments(e, f)
+
+        n_total += len(alignments) + len(unk_alignments)
+        n_unk += len(unk_alignments)
+
+    print(n_unk, n_total, n_unk/n_total)
+
+
+def calc_pos_sequence_alignments(seq_len, en, fr, align_s, align_p, enpos, frpos):
     """
     Calculates the alignments and maps these to the corresponding sequences of POS tags.
     Returns 3 dictionaries, corresponding to the sure, possible and wrong alignments.
     (The keys of the dictionaries are POS tag sequences such as 'DET-NOUN-VERB'.)
     """
-    sys.path.append(os.path.expanduser('..'))
-    with open(probs_path, 'rb') as file:
-        probs = pickle.load(file)
-
     def get_alignments(s, t):
         a = []
         for i, wt in enumerate(t, start=1):
-            maxlink = np.argmax([probs[wt, ws] for ws in s])
+            maxlink = np.argmax([PROBS[wt, ws] for ws in s])
             if maxlink != 0:
                 a.append((maxlink, i))
         return a
@@ -159,8 +199,7 @@ if __name__ == '__main__':
 
     sure_pos_a, prob_pos_a, wrong_pos_a = calc_pos_alignments(en_sen, fr_sen,
                                                               sure_a, prob_a,
-                                                              en_pos, fr_pos,
-                                                              '../pickles/translation_probs_IBM1.pickle')
+                                                              en_pos, fr_pos)
 
     mc = 10
     print('10 most common pos2pos in sure links:')
@@ -176,8 +215,7 @@ if __name__ == '__main__':
                                                                             3,
                                                                             en_sen, fr_sen,
                                                                             sure_a, prob_a,
-                                                                            en_pos, fr_pos,
-                                                                            '../pickles/translation_probs_IBM1.pickle')
+                                                                            en_pos, fr_pos)
 
     print('The 10 most common POS sequences in sure links:')
     pprint(en_seq_s.most_common(mc))
