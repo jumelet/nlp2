@@ -7,11 +7,11 @@ from project1.data_reader import DataReader
 
 
 ###
-source_path = 'data/training/hansards.36.2.e'
-target_path = 'data/training/hansards.36.2.f'
+source_path = '../data/test/test.e'
+target_path = '../data/test/test.f'
 
-source_output_path = 'data/training/hansards.36.2.pos.e'
-target_output_path = 'data/training/hansards.36.2.pos.f'
+source_output_path = '../data/test/test.pos.e'
+target_output_path = '../data/test/test.pos.f'
 ###
 
 En = spacy.load('en_core_web_md')
