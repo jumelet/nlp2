@@ -1,5 +1,16 @@
-### Programming
+- Florian:
+    - Plot log-likelihood/AER of ibm1&2 (as described in project doc)
+    - Compare models on test data and produce output files
+- Jaap:
+    - Fix source/target stuff
+    - Write up experiments he did
+    - Introduction
+- Mario:
+    - Write up experiments he did
+        - jump size, absolute offset, signed offset
+    - Conclusion
 
+### Programming
 - IBM1
     - ~~currently training~~
     - plot training log-likelihood and AER
@@ -15,6 +26,7 @@
     - train
     - plot training log-likelihood and AER
 - Evaluate IBM 1, IBM 2, Neural IBM with test data
+
 
 
 ### Paper
