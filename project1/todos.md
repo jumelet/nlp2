@@ -1,9 +1,9 @@
-Florian:
+- Florian:
     - Plot log-likelihood/AER of ibm1&2 (as described in project doc)
-Jaap:
+- Jaap:
     - Fix source/target stuff
     - Write up experiments he did
-Mario:
+- Mario:
     - Write up experiments he did
 
 ### Programming
