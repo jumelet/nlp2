@@ -3,8 +3,8 @@ from typing import Dict, Tuple, List
 from collections import defaultdict
 from tqdm import tqdm
 import dill as pickle
-from project1.data_reader import DataReader
-from project1.aer import read_naacl_alignments, AERSufficientStatistics
+from data_reader import DataReader
+from aer import read_naacl_alignments, AERSufficientStatistics
 
 NULL_TOKEN = 'NULL'
 
@@ -18,7 +18,11 @@ class IBM:
                  target_path_train: str,
                  source_path_valid: str,
                  target_path_valid: str,
+                 source_path_test: str,
+                 target_path_test: str,
                  gold_path_valid: str,
+                 gold_path_test: str,
+
                  seeds=None) -> None:
 
         assert ibm_type.lower() in ['ibm1', 'ibm2'], \
@@ -32,6 +36,7 @@ class IBM:
         self.serialize_params = serialize_params
         self.train_data_reader = DataReader(source_path_train, target_path_train)
         self.valid_data_reader = DataReader(source_path_valid, target_path_valid)
+        self.test_data_reader = DataReader(source_path_test, target_path_test)
 
         if self.init_type == 'uniform':
             init_ef_norm = 1 / self.train_data_reader.n_target_types
@@ -53,14 +58,14 @@ class IBM:
 
     def train(self, n_iter: int) -> None:
         if self.init_type != 'random':
-            self._train(n_iter)
+            t_ll, aers, test_aers = self._train(n_iter)
         else:
             for run_idx, seed in enumerate(self.seeds, start=1):
                 print('Run {} with random initialisation.'.format(run_idx))
                 np.random.seed(seed)
                 self.f_given_e: Dict[Tuple[str, str], float] = defaultdict(lambda: np.random.random())
 
-                _, aers = self._train(n_iter)
+                t_ll, aers = self._train(n_iter)
                 self.models.append((np.copy(self.f_given_e), aers[-1]))
 
             # Compute aggregate model statistics
@@ -71,7 +76,7 @@ class IBM:
             best_model_idx = np.argmin(models_aer).item()
             best_aer = models_aer[best_model_idx]
 
-            print('Best model: {}.  AER: {:.3f}'.format(best_model_idx+1, best_aer))
+            print('Best model: {}.  AER: {:.3f}'.format(best_model_idx + 1, best_aer))
 
             # Reset probabilities according to best model
             self.f_given_e = self.models[best_model_idx][0]
@@ -84,11 +89,17 @@ class IBM:
                 with open('alignment_probs_IBM2.pickle', 'wb') as af:
                     align_dict = self.align_probs
                     pickle.dump(align_dict, af)
+            aers = np.array(aers)
+            t_ll = np.array(t_ll)
+            test_aers = np.array(test_aers)
+            np.save('all_aers_{}_{}'.format(self.ibm_type, self.init_type), aers)
+            np.save('all_t_ll_{}_{}'.format(self.ibm_type, self.init_type), t_ll)
+            np.save('all_test_aers'.format(self.ibm_type, self.init_type), test_aers)
 
     def _train(self, n_iter: int) -> Tuple[List[float], List[float]]:
         training_log_likelihoods = []
         aers = []
-
+        aers_test = []
         for iteration in range(n_iter):
             counts_ef = defaultdict(float)
             counts_e = defaultdict(float)
@@ -139,9 +150,11 @@ class IBM:
                     self.align_probs[x] = c / norm_align_probs
 
             aer = self.validation(iteration)
+            aer_test = self.test_set_prediction_and_aer(iteration)
             aers.append(aer)
+            aers_test.append(aer_test)
 
-        return training_log_likelihoods, aers
+        return training_log_likelihoods, aers, aers_test
 
     def calc_ef_prob(self, wf: str, we: str, e_pos: int, f_pos: int, len_e: int, len_f: int):
         if self.ibm_type == 'ibm2':
@@ -149,6 +162,52 @@ class IBM:
             return self.f_given_e[wf, we] * self.align_probs[jump]
 
         return self.f_given_e[wf, we]
+
+    def test_set_prediction_and_aer(self, iteration: int) -> float:
+        print('Testing...')
+
+        if self.ibm_type == 'IBM1':
+            out_file = open("ibm1.mle.naacl_{}_{}".format(iteration, self.init_type), "w")
+        else:
+            out_file = open("ibm2.mle.naacl_{}_{}".format(iteration, self.init_type), "w")
+
+        metric = AERSufficientStatistics()
+        predictions = []
+        sentence_id = 0
+        for source, target in self.test_data_reader.get_parallel_data():
+            sentence_id += 1
+            source = [NULL_TOKEN] + source
+
+            len_e = len(source)
+            len_f = len(target)
+            links = set()
+            for f_pos, wf in enumerate(target):
+                maxlink = np.argmax(
+                    [
+                        self.calc_ef_prob(wf, we, e_pos, f_pos, len_e, len_f)
+                        for (e_pos, we) in enumerate(source)
+                    ]
+                )
+                link = (maxlink, 1 + f_pos)
+
+                # Do not add links that align target words to the NULL token
+                if maxlink != 0:
+                    links.add(link)
+
+                    out_file.write(str(sentence_id) + ' ' + ' ' + str(link[0]) + ' ' + ' ' + str(link[1]) + '\n')
+
+            predictions.append(links)
+
+        for gold, pred in zip(self.gold_links, predictions):
+            metric.update(sure=gold[0], probable=gold[1], predicted=pred)
+
+        aer = metric.aer()
+
+        print(f'AER: {iteration} {aer:.3f}')
+
+        out_file.close()
+
+        return aer
 
     def validation(self, iteration: int) -> float:
         print('Validation...')
