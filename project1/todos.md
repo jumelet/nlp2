@@ -1,10 +1,14 @@
 - Florian:
     - Plot log-likelihood/AER of ibm1&2 (as described in project doc)
+    - Compare models on test data and produce output files
 - Jaap:
     - Fix source/target stuff
     - Write up experiments he did
+    - Introduction
 - Mario:
     - Write up experiments he did
+        - jump size, absolute offset, signed offset
+    - Conclusion
 
 ### Programming
 - IBM1
