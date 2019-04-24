@@ -51,7 +51,6 @@ class IBM:
 
         self.gold_links = read_naacl_alignments(gold_path_valid)
 
-
     def train(self, n_iter: int) -> None:
         if self.init_type != 'random':
             self._train(n_iter)
@@ -82,9 +81,9 @@ class IBM:
                 prob_dict = self.f_given_e
                 pickle.dump(prob_dict, f)
             if self.ibm_type == 'IBM2':
-               with open('alignment_probs_IBM2.pickle', 'wb') as af:
-                   align_dict = self.align_probs
-                   pickle.dump(align_dict, af)
+                with open('alignment_probs_IBM2.pickle', 'wb') as af:
+                    align_dict = self.align_probs
+                    pickle.dump(align_dict, af)
 
     def _train(self, n_iter: int) -> Tuple[List[float], List[float]]:
         training_log_likelihoods = []
@@ -104,7 +103,7 @@ class IBM:
                 len_e = len(e)
                 len_f = len(f)
 
-                log_ll_normalizer = np.log(1 / len_e) if self.ibm_type == 'ibm1' else 0
+                ll_normalizer = len_e if self.ibm_type == 'ibm1' else 1
 
                 for f_pos, wf in enumerate(f):
                     delta_normalizer = 0
@@ -113,10 +112,12 @@ class IBM:
                         ef_prob = self.calc_ef_prob(wf, we, e_pos, f_pos, len_e, len_f)
                         delta_normalizer += ef_prob
 
+                    ef_probs = []
+
                     for e_pos, we in enumerate(e):
                         ef_prob = self.calc_ef_prob(wf, we, e_pos, f_pos, len_e, len_f)
                         delta = ef_prob / delta_normalizer
-                        log_likelihood += ef_prob
+                        ef_probs.append(ef_prob / ll_normalizer)
 
                         counts_ef[we, wf] += delta
                         counts_e[we] += delta
@@ -124,7 +125,7 @@ class IBM:
                             jump = self.get_jump(e_pos, f_pos, len_e, len_f)
                             counts_align[jump] += delta
 
-                    training_log_likelihood += np.log(log_likelihood) - log_ll_normalizer
+                    training_log_likelihood += np.log(np.sum(ef_probs))
 
             print('Training log-likelihood: {}'.format(training_log_likelihood))
 
@@ -140,13 +141,10 @@ class IBM:
             aer = self.validation(iteration)
             aers.append(aer)
 
-        return (training_log_likelihoods, aers)
-
-
+        return training_log_likelihoods, aers
 
     def calc_ef_prob(self, wf: str, we: str, e_pos: int, f_pos: int, len_e: int, len_f: int):
         if self.ibm_type == 'ibm2':
-            # TODO: add switch between jump/positional
             jump = self.get_jump(e_pos, f_pos, len_e, len_f)
             return self.f_given_e[wf, we] * self.align_probs[jump]
 
