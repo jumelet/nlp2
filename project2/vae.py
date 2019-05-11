@@ -50,16 +50,14 @@ test_loader = torch.utils.data.DataLoader(
 class RNNEncoder(nn.Module):
     def __init__(self, rnn_type, nlayers, vocab_size, edim, hdim, zdim, bidirectional=True):
         super(RNNEncoder, self).__init__()
-
-        self.embed = nn.Embedding(vocab_size, edim, padding_idx=None)
-        self.encode = nn.Linear(hdim, zdim)
-
         if rnn_type in ['LSTM', 'GRU']:
             self.rnn = getattr(nn, rnn_type)(vocab_size, hdim, nlayers, bidirectional=bidirectional)
         else:
             raise ValueError("""An invalid option for `--model` was supplied,
-                                                options are ['LSTM', 'GRU', 'RNN_TANH' or 'RNN_RELU']""")
+                                options are ['LSTM', 'GRU', 'RNN_TANH' or 'RNN_RELU']""")
 
+        self.embed = nn.Embedding(vocab_size, edim, padding_idx=None)
+        self.encode = nn.Linear(hdim, zdim)
         self.init_weights()
 
     def init_weights(self):
@@ -70,20 +68,19 @@ class RNNEncoder(nn.Module):
         output, hidden =  self.rnn(self.embed(input), hidden)
         return self.encode(output), hidden
 
+
 class RNNDecoder(nn.Module):
     def __init__(self, rnn_type, nlayers, vocab_size, edim, hdim, zdim, bidirectional=True):
         super(RNNDecoder, self).__init__()
-
-        self.embed = nn.Embedding(vocab_size, edim)
-        self.decode = nn.Linear(zdim, hdim)
-        self.tovocab = nn.Linear(hdim, vocab_size)
-
         if rnn_type in ['LSTM', 'GRU']:
             self.rnn = getattr(nn, rnn_type)(vocab_size, hdim, nlayers, bidirectional=bidirectional)
         else:
             raise ValueError("""An invalid option for `--model` was supplied,
                                 options are ['LSTM', 'GRU', 'RNN_TANH' or 'RNN_RELU']""")
 
+        self.embed = nn.Embedding(vocab_size, edim)
+        self.decode = nn.Linear(zdim, hdim)
+        self.tovocab = nn.Linear(hdim, vocab_size)
         self.init_weights()
 
     def init_weights(self):
@@ -105,12 +102,11 @@ class VAE(nn.Module):
         self.project_loc = nn.Linear(zdim, zdim)
         self.project_scale = nn.Linear(zdim, zdim)
 
-
     def encode(self, input, hidden):
         h = self.encoder(input, hidden)
         return self.project_loc(h), self.project_scale(h).softplus()
 
-    def reparameterize(self, loc, scale):
+    def reparametrize(self, loc, scale):
         std = torch.exp(0.5 * scale)
         eps = torch.randn_like(std)
         return loc + eps * std
@@ -118,9 +114,9 @@ class VAE(nn.Module):
     def decode(self, input, z):
         return self.decoder(input, z)
 
-    def forward(self, input):
-        loc, scale = self.encode(input)
-        z = self.reparameterize(loc, scale)
+    def forward(self, input, hidden):
+        loc, scale = self.encode(input, hidden)
+        z = self.reparametrize(loc, scale)
         return self.decode(z), loc, scale
 
 #
