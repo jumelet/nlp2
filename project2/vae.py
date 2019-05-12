@@ -48,15 +48,18 @@ test_loader = torch.utils.data.DataLoader(
 
 
 class RNNEncoder(nn.Module):
-    def __init__(self, rnn_type, nlayers, vocab_size, edim, hdim, zdim, bidirectional=True):
+    def __init__(self, rnn_type, nlayers, vocab, edim, hdim, zdim, bidirectional=True):
         super(RNNEncoder, self).__init__()
+        self.w2i = {w: i for (i, w) in enumerate(vocab)}
+        self.V = len(self.w2i)
+
         if rnn_type in ['LSTM', 'GRU']:
-            self.rnn = getattr(nn, rnn_type)(vocab_size, hdim, nlayers, bidirectional=bidirectional)
+            self.rnn = getattr(nn, rnn_type)(self.V, hdim, nlayers, bidirectional=bidirectional)
         else:
             raise ValueError("""An invalid option for `--model` was supplied,
                                 options are ['LSTM', 'GRU', 'RNN_TANH' or 'RNN_RELU']""")
 
-        self.embed = nn.Embedding(vocab_size, edim, padding_idx=None)
+        self.embed = nn.Embedding(self.V, edim, padding_idx=None)
         self.encode = nn.Linear(hdim, zdim)
         self.init_weights()
 
@@ -70,26 +73,40 @@ class RNNEncoder(nn.Module):
 
 
 class RNNDecoder(nn.Module):
-    def __init__(self, rnn_type, nlayers, vocab_size, edim, hdim, zdim, bidirectional=True):
+    def __init__(self, rnn_type, nlayers, vocab, edim, hdim, zdim, bidirectional=True):
         super(RNNDecoder, self).__init__()
+        self.w2i = {w: i for (i, w) in enumerate(vocab)}
+        self.i2w = {i: w for (w, i) in self.w2i.items()}
+        self.V = len(self.w2i)
+
         if rnn_type in ['LSTM', 'GRU']:
-            self.rnn = getattr(nn, rnn_type)(vocab_size, hdim, nlayers, bidirectional=bidirectional)
+            self.rnn = getattr(nn, rnn_type)(self.V, hdim, nlayers, bidirectional=bidirectional)
         else:
             raise ValueError("""An invalid option for `--model` was supplied,
                                 options are ['LSTM', 'GRU', 'RNN_TANH' or 'RNN_RELU']""")
 
-        self.embed = nn.Embedding(vocab_size, edim)
+
+        self.embed = nn.Embedding(self.V, edim)
         self.decode = nn.Linear(zdim, hdim)
-        self.tovocab = nn.Linear(hdim, vocab_size)
+        self.tovocab = nn.Linear(hdim, self.V)
+        self.eos = self.embed(['[EOS]'])
         self.init_weights()
 
     def init_weights(self):
         initrange = 0.1
         self.embed.weight.data.uniform_(-initrange, initrange)
 
-    def forward(self, input, z):
-        output, hidden = self.rnn(self.decode(z), self.embed(z))
-        return F.log_softmax(self.tovocab(output)), hidden
+    def forward(self, z):
+        hidden = self.decode(z)
+        seq = [self.w2i['[BOS]']]
+        log_p = []
+        while seq[-1] != self.w2i['[EOS]']:
+            output, hidden = self.rnn(self.eos.view(1, 1, -1), hidden)
+            log_p_output = F.log_softmax(self.tovocab(output))
+            next_token_id = torch.argmax(log_p_output).item()
+            log_p.append(log_p_output)
+            seq.append(next_token_id)
+        return torch.stack(log_p), torch.stack(seq)
 
 
 class VAE(nn.Module):
@@ -111,33 +128,27 @@ class VAE(nn.Module):
         eps = torch.randn_like(std)
         return loc + eps * std
 
-    def decode(self, input, z):
-        return self.decoder(input, z)
+    def decode(self, z):
+        log_p, seq = self.decoder(z)
+        return log_p, seq
 
     def forward(self, input, hidden):
         loc, scale = self.encode(input, hidden)
         z = self.reparametrize(loc, scale)
-        return self.decode(z), loc, scale
+        log_p, seq = self.decode(z)
+        return log_p, seq, loc, scale
 
-#
-# Here starts the old, unmodified code (https://github.com/pytorch/examples/blob/master/vae/main.py)
-#
 
 model = VAE().to(device)
 optimizer = optim.Adam(model.parameters(), lr=1e-3)
 
 
 # Reconstruction + KL divergence losses summed over all elements and batch
-def loss_function(recon_x, x, mu, logvar):
-    BCE = F.binary_cross_entropy(recon_x, x.view(-1, 784), reduction='sum')
-
-    # see Appendix B from VAE paper:
-    # Kingma and Welling. Auto-Encoding Variational Bayes. ICLR, 2014
-    # https://arxiv.org/abs/1312.6114
-    # 0.5 * sum(1 + log(sigma^2) - mu^2 - sigma^2)
-    KLD = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
-
-    return BCE + KLD
+def loss_function(logp, target, seq, loc, scale, anneal_function=None):
+    NLL = torch.nn.NLLLoss()
+    nll_loss = NLL(logp, target)
+    kl_loss = -0.5 * torch.sum(1 + scale - loc.pow(2) - scale.exp())
+    return nll_loss + kl_loss
 
 
 def train(epoch):
@@ -146,8 +157,8 @@ def train(epoch):
     for batch_idx, (data, _) in enumerate(train_loader):
         data = data.to(device)
         optimizer.zero_grad()
-        recon_batch, mu, logvar = model(data)
-        loss = loss_function(recon_batch, data, mu, logvar)
+        log_p, seq, loc, scale = model(data)
+        loss = loss_function(log_p, data, seq, loc, scale).item()
         loss.backward()
         train_loss += loss.item()
         optimizer.step()
@@ -167,14 +178,14 @@ def test(epoch):
     with torch.no_grad():
         for i, (data, _) in enumerate(test_loader):
             data = data.to(device)
-            recon_batch, mu, logvar = model(data)
-            test_loss += loss_function(recon_batch, data, mu, logvar).item()
-            if i == 0:
-                n = min(data.size(0), 8)
-                comparison = torch.cat([data[:n],
-                                      recon_batch.view(args.batch_size, 1, 28, 28)[:n]])
-                save_image(comparison.cpu(),
-                         'results/reconstruction_' + str(epoch) + '.png', nrow=n)
+            log_p, seq, loc, scale = model(data)
+            test_loss += loss_function(log_p, data, seq, loc, scale).item()
+            # if i == 0:
+            #     n = min(data.size(0), 8)
+            #     comparison = torch.cat([data[:n],
+            #                           recon_batch.view(args.batch_size, 1, 28, 28)[:n]])
+            #     save_image(comparison.cpu(),
+            #              'results/reconstruction_' + str(epoch) + '.png', nrow=n)
 
     test_loss /= len(test_loader.dataset)
     print('====> Test set loss: {:.4f}'.format(test_loss))
@@ -183,8 +194,8 @@ if __name__ == "__main__":
     for epoch in range(1, args.epochs + 1):
         train(epoch)
         test(epoch)
-        with torch.no_grad():
-            sample = torch.randn(64, 20).to(device)
-            sample = model.decode(sample).cpu()
-            save_image(sample.view(64, 1, 28, 28),
-                       'results/sample_' + str(epoch) + '.png')
+        # with torch.no_grad():
+        #     sample = torch.randn(64, 20).to(device)
+        #     sample = model.decode(sample).cpu()
+        #     save_image(sample.view(64, 1, 28, 28),
+        #                'results/sample_' + str(epoch) + '.png')
