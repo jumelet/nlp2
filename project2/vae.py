@@ -13,7 +13,8 @@ import torch.utils.data
 from torch import nn, optim
 from torch.nn import functional as F
 from torchvision import datasets, transforms
-from torchvision.utils import save_image
+from nltk.tree import Tree
+from collections import Counter
 
 
 parser = argparse.ArgumentParser(description='VAE MNIST Example')
@@ -36,15 +37,62 @@ device = torch.device("cuda" if args.cuda else "cpu")
 
 kwargs = {'num_workers': 1, 'pin_memory': True} if args.cuda else {}
 
+EOS = '[EOS]'
 
-# todo: replace with DataLoader for sentences
-train_loader = torch.utils.data.DataLoader(
-    datasets.MNIST('../data', train=True, download=True,
-                   transform=transforms.ToTensor()),
-    batch_size=args.batch_size, shuffle=True, **kwargs)
-test_loader = torch.utils.data.DataLoader(
-    datasets.MNIST('../data', train=False, transform=transforms.ToTensor()),
-    batch_size=args.batch_size, shuffle=True, **kwargs)
+
+class Split(object):
+    def __init__(self, sentences, n=None):
+        self.sentences = sentences
+        if n is None:
+            self.len = len(sentences)
+        else:
+            self.len = n
+
+    def data(self):
+        for s in self.sentences:
+            yield s
+
+    def __len__(self):
+        return self.len
+
+
+class CorpusLoader(object):
+    def __init__(self, train_path, test_path, validation_path=None):
+        counter = Counter([EOS])
+
+        sentences, len, counter = self.load(train_path, counter)
+        self.training = Split(sentences, len)
+
+        sentences, len, counter = self.load(train_path, counter)
+        self.test = Split(sentences, len)
+
+        if validation_path:
+            sentences, len, counter = self.load(validation_path, counter)
+            self.validation = Split(sentences, len)
+
+        self.vocab = [w for (w, freq) in counter.most_common()]
+        self.w2i = {w: i for (i, w) in enumerate(self.vocab)}
+        self.i2w = {i: w for (w, i) in self.w2i.items()}
+
+    def load(self, path, counter=None):
+        if counter is None:
+            counter = Counter()
+
+        sentences, len = [], 0
+        with open(path, 'r') as f:
+            for line in f.readlines():
+                tree = Tree.fromstring(line)
+                sentence = tree.leaves()
+                counter += Counter(sentence)
+                sentences.append(sentence + [EOS])
+                len += 1
+        return sentences, len, counter
+
+    def tokens_to_ids(self, seq):
+        return [self.w2i[w] for w in seq]
+
+    def ids_to_tokens(self, seq):
+        return [self.i2w[i] for i in seq]
 
 
 class RNNEncoder(nn.Module):
@@ -151,10 +199,10 @@ def loss_function(logp, target, seq, loc, scale, anneal_function=None):
     return nll_loss + kl_loss
 
 
-def train(epoch):
+def train(train_data, valid_data, epoch):
     model.train()
     train_loss = 0
-    for batch_idx, (data, _) in enumerate(train_loader):
+    for batch_idx, (data, _) in enumerate(train_data):
         data = data.to(device)
         optimizer.zero_grad()
         log_p, seq, loc, scale = model(data)
@@ -164,19 +212,19 @@ def train(epoch):
         optimizer.step()
         if batch_idx % args.log_interval == 0:
             print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                epoch, batch_idx * len(data), len(train_loader.dataset),
-                100. * batch_idx / len(train_loader),
+                epoch, batch_idx * len(data), len(train_data.dataset),
+                100. * batch_idx / len(train_data),
                 loss.item() / len(data)))
 
     print('====> Epoch: {} Average loss: {:.4f}'.format(
-          epoch, train_loss / len(train_loader.dataset)))
+          epoch, train_loss / len(train_data.dataset)))
 
 
-def test(epoch):
+def test(test_data, epoch):
     model.eval()
     test_loss = 0
     with torch.no_grad():
-        for i, (data, _) in enumerate(test_loader):
+        for i, (data, _) in enumerate(test_data):
             data = data.to(device)
             log_p, seq, loc, scale = model(data)
             test_loss += loss_function(log_p, data, seq, loc, scale).item()
@@ -187,7 +235,7 @@ def test(epoch):
             #     save_image(comparison.cpu(),
             #              'results/reconstruction_' + str(epoch) + '.png', nrow=n)
 
-    test_loss /= len(test_loader.dataset)
+    test_loss /= len(test_data)
     print('====> Test set loss: {:.4f}'.format(test_loss))
 
 if __name__ == "__main__":
