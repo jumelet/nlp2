@@ -2,32 +2,64 @@
 # training : 'project_2_data/02-21.10way.clean'
 # validation: 'project_2_data/22.auto.clean'
 # test: 'project_2_data/23.auto.clean'
+from collections import defaultdict
+import numpy as np
+import torch
 
 
-def preprocess_to_sent(line):
+class Data_reader:
 
-    sent = []
-    for i, sym in enumerate(line):
-        if sym == ')' and line[i - 1] != ')' and line[i - 1] != ' ':
-            word_start = 0
-            c = None
-            while c != ' ':
+    def __init__(self, path=None):
 
-                c = line[i - word_start]
-                word_start += 1
+        self.path = path
+        self.w2i = defaultdict(int)
+        self.i2w = ['UNK']
+        self.w2i['UNK'] = 0
+        self.sentences, sentences_indices = self.preprocess_data(path)
+        self.sentences_indices = np.array(sentences_indices)
+        np.random.shuffle(self.sentences_indices)
 
-            word = line[i - word_start + 2:i]
+    def preprocess_to_sent(self, line):
 
-            sent.append(word)
-    return sent
+        sent = []
+        sent_indices = []
+        for i, sym in enumerate(line):
+            if sym == ')' and line[i - 1] != ')' and line[i - 1] != ' ':
+                word_start = 0
+                c = None
+                while c != ' ':
 
+                    c = line[i - word_start]
+                    word_start += 1
 
-def preprocess_data(path):
-    corpus = []
+                word = line[i - word_start + 2:i]
 
-    with open(path) as f:
-        for line in f:
-            sent = preprocess_to_sent(line)
-            corpus.append(sent)
+                sent.append(word)
 
-    return corpus
+                if word not in list(self.w2i.keys()):
+                    self.w2i[word] = len(self.w2i.keys())
+                    self.i2w.append(word)
+
+                sent_indices.append(self.w2i[word])
+        return sent, sent_indices
+
+    def preprocess_data(self, path):
+        corpus = []
+        corpus_indices = []
+        with open(path) as f:
+            for line in f:
+                sent, sent_indices = self.preprocess_to_sent(line)
+                if len(sent_indices) == 0:
+                    continue
+                corpus.append(sent)
+                corpus_indices.append(sent_indices)
+
+        return corpus, corpus_indices
+
+    def create_batches(self, batch_size):
+        self.sentences_indices = self.sentences_indices.tolist()
+        for i in range(0, len(self.sentences_indices), batch_size):
+            batch = self.sentences_indices[i:i + batch_size]
+            batch.sort(key=len, reverse=True)
+            batch = [torch.tensor(s) for s in batch]
+            yield batch
