@@ -15,10 +15,10 @@ from torch.nn import functional as F
 from nltk.tree import Tree
 from collections import Counter
 from torch.nn.utils.rnn import pad_sequence
-import numpy as np
+from tqdm import tqdm
 
-parser = argparse.ArgumentParser(description='VAE MNIST Example')
-parser.add_argument('--batch-size', type=int, default=128, metavar='N',
+parser = argparse.ArgumentParser(description='Sentence VAE')
+parser.add_argument('--batch_size', type=int, default=128, metavar='N',
                     help='input batch size for training (default: 128)')
 parser.add_argument('--epochs', type=int, default=10, metavar='N',
                     help='number of epochs to train (default: 10)')
@@ -26,8 +26,8 @@ parser.add_argument('--no-cuda', action='store_true', default=False,
                     help='enables CUDA training')
 parser.add_argument('--seed', type=int, default=1, metavar='S',
                     help='random seed (default: 1)')
-parser.add_argument('--log-interval', type=int, default=10, metavar='N',
-                    help='how many batches to wait before logging training status')
+# parser.add_argument('--log-interval', type=int, default=10, metavar='N',
+#                     help='how many batches to wait before logging training status')
 args = parser.parse_args()
 args.cuda = not args.no_cuda and torch.cuda.is_available()
 
@@ -114,10 +114,9 @@ class Corpus(object):
 
 
 class RNNEncoder(nn.Module):
-    def __init__(self, batch_size, rnn_type, nlayers, bidirectional, edim, hdim, zdim, vocab):
+    def __init__(self, rnn_type, nlayers, bidirectional, edim, hdim, zdim, vocab):
         super(RNNEncoder, self).__init__()
-        self.w2i = {w: i for (i, w) in enumerate(vocab)}
-        self.V = len(self.w2i)
+        self.V = len(vocab)
 
         if rnn_type in ['LSTM', 'GRU']:
             self.rnn = getattr(nn, rnn_type)(edim, hdim, nlayers, bidirectional=bidirectional)
@@ -149,14 +148,10 @@ class RNNEncoder(nn.Module):
 
 
 class RNNDecoder(nn.Module):
-    def __init__(self, batch_size, rnn_type, nlayers, bidirectional, edim, hdim, zdim, vocab):
+    def __init__(self, rnn_type, nlayers, bidirectional, edim, hdim, zdim, vocab):
         super(RNNDecoder, self).__init__()
 
-        self.w2i = {w: i for (i, w) in enumerate(vocab)}
-        self.i2w = {i: w for (w, i) in self.w2i.items()}
-
-        self.V = len(self.w2i)
-        self.batch_size = batch_size
+        self.V = len(vocab)
         self.hdim = hdim
 
         if rnn_type in ['LSTM', 'GRU']:
@@ -191,8 +186,8 @@ class VAE(nn.Module):
     def __init__(self, batch_size, rnn_type, nlayers, bidirectional, edim, hdim, zdim, vocab, word_dropout_prob=0.):
         super(VAE, self).__init__()
 
-        self.encoder = RNNEncoder(batch_size, rnn_type, nlayers, bidirectional, edim, hdim, zdim, vocab)
-        self.decoder = RNNDecoder(batch_size, rnn_type, nlayers, bidirectional, edim, hdim, zdim, vocab)
+        self.encoder = RNNEncoder(rnn_type, nlayers, bidirectional, edim, hdim, zdim, vocab)
+        self.decoder = RNNDecoder(rnn_type, nlayers, bidirectional, edim, hdim, zdim, vocab)
         self.project_loc = nn.Linear(zdim, zdim)
         self.project_scale = nn.Linear(zdim, zdim)
 
@@ -276,7 +271,7 @@ def train(model, optimizer, train_split, batch_size, epoch):
     wpa = 0
     n_batches = 0
     annealing = Annealing('linear', 2000)
-    for batch_idx, (data, target) in enumerate(train_split.data(batch_size)):
+    for batch_idx, (data, target) in enumerate(tqdm(train_split.data(batch_size), total=len(train_split) // batch_size)):
         n_batches += 1
         data = data.to(device)
         target = target.to(device)
@@ -350,6 +345,7 @@ def test(model, test_split, batch_size):
     print('====> Test set loss: {:.4f}WPA: {:.4f}'.format(test_loss, wpa))
     return test_loss, wpa
 
+
 if __name__ == "__main__":
 
     corpus = Corpus(
@@ -359,16 +355,14 @@ if __name__ == "__main__":
         test_path='data/23.auto.clean'
     )
 
-    batch_size = 64
-
     print('!!!  V =', len(corpus.vocab))
-    model = VAE(batch_size,
+    model = VAE(args.batch_size,
                 rnn_type='GRU',
                 nlayers=1,
                 bidirectional=True,
-                edim=353,
-                hdim=191,
-                zdim=13,
+                edim=200, #353,
+                hdim=100, #191,
+                zdim=10,  #13,
                 vocab=corpus.vocab,
                 word_dropout_prob=0.4)
 
@@ -377,8 +371,8 @@ if __name__ == "__main__":
 
 
     for epoch in range(1, args.epochs + 1):
-        train(model, optimizer, corpus.training, batch_size, epoch)
-        validate(model, optimizer, corpus.validation, batch_size, epoch)
+        train(model, optimizer, corpus.training, args.batch_size, epoch)
+        validate(model, optimizer, corpus.validation, args.batch_size, epoch)
         # test(model, corpus.test, batch_size)
 
 
