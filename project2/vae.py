@@ -317,15 +317,12 @@ def validate(model, optimizer, valid_split, batch_size, epoch):
         data = data.to(device)
         target = target.to(device)
 
-        optimizer.zero_grad()
         log_p, loc, scale = model(data)
         loss = loss_function(log_p,
                              target,
                              loc,
                              scale)
-        loss.backward()
         valid_loss += loss.item()
-        optimizer.step()
         wpa += word_prediction_accuracy(log_p, target)
 
     valid_loss /= len(valid_split)
