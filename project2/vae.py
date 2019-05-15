@@ -15,7 +15,7 @@ from torch.nn import functional as F
 from nltk.tree import Tree
 from collections import Counter
 from torch.nn.utils.rnn import pad_sequence
-
+import numpy as np
 
 parser = argparse.ArgumentParser(description='VAE MNIST Example')
 parser.add_argument('--batch-size', type=int, default=128, metavar='N',
@@ -188,7 +188,7 @@ class RNNDecoder(nn.Module):
 
 
 class VAE(nn.Module):
-    def __init__(self, batch_size, rnn_type, nlayers, bidirectional, edim, hdim, zdim, vocab):
+    def __init__(self, batch_size, rnn_type, nlayers, bidirectional, edim, hdim, zdim, vocab, word_dropout_prob=0.):
         super(VAE, self).__init__()
 
         self.encoder = RNNEncoder(batch_size, rnn_type, nlayers, bidirectional, edim, hdim, zdim, vocab)
@@ -199,6 +199,7 @@ class VAE(nn.Module):
         self.nlayers = nlayers
         self.bidirectional = bidirectional
         self.hdim = hdim
+        self.dropout_prob = word_dropout_prob
 
     def encode(self, input):
         h0 = torch.Tensor(torch.zeros(self.nlayers + int(self.bidirectional) * self.nlayers,
@@ -213,6 +214,15 @@ class VAE(nn.Module):
         return loc + eps * std  # z
 
     def decode(self, input, z):
+        # randomly replace decoder input with <unk>
+        if self.dropout_prob > 0:
+            mask = torch.rand(input.size())
+            if torch.cuda.is_available():
+                mask = mask.cuda()
+            mask[mask < self.dropout_prob] = 0
+            mask[mask >= self.dropout_prob] = 1
+            mask[0, :] = 1  # always keep begin of sentence
+            input = torch.mul(input, mask.long())
         return self.decoder(input, z)
 
     def forward(self, input):
@@ -230,11 +240,34 @@ def word_prediction_accuracy(logp, target):
     return torch.mean(torch.eq(argmax, target).float())
 
 # Reconstruction + KL divergence losses summed over all elements and batch
-def loss_function(logp, target, loc, scale, anneal_function=None):
+def loss_function(logp, target, loc, scale, annealing=None):
     NLL = torch.nn.NLLLoss(ignore_index=0)
     nll_loss = NLL(logp, target)
     kl_loss = -0.5 * torch.sum(1 + scale - loc - scale.exp())
-    return nll_loss + kl_loss
+    if annealing:
+        kl_loss *= annealing.rate()
+    return nll_loss + kl_loss * kl_loss
+
+
+class Annealing(object):
+    def __init__(self, type='linear', nsteps=5000):
+        self.nsteps = nsteps
+        self.step = 0
+
+        if type not in ['linear', 'sigmoid']:
+            raise ValueError('Invalid annealing type: {}'.format(type))
+        self.type = type
+
+    def rate(self):
+        self.step += 1
+        if self.type == 'linear':
+            return self.step / self.nsteps
+        else:
+            raise NotImplementedError()
+
+    def reset(self):
+        self.step = 0
+
 
 
 def train(model, optimizer, train_split, batch_size, epoch):
@@ -242,6 +275,7 @@ def train(model, optimizer, train_split, batch_size, epoch):
     train_loss = 0
     wpa = 0
     n_batches = 0
+    annealing = Annealing('linear', 2000)
     for batch_idx, (data, target) in enumerate(train_split.data(batch_size)):
         n_batches += 1
         data = data.to(device)
@@ -256,7 +290,8 @@ def train(model, optimizer, train_split, batch_size, epoch):
         loss = loss_function(log_p,
                              target,
                              loc,
-                             scale)
+                             scale,
+                             annealing)
         loss.backward()
         train_loss += loss.item()
         optimizer.step()
@@ -295,7 +330,7 @@ def validate(model, optimizer, valid_split, batch_size, epoch):
 
     valid_loss /= len(valid_split)
     wpa /= n_batches
-    print('====> Epoch: {} Average validation loss: WPA: {:.4f}'.format(epoch, valid_loss, wpa))
+    print('====> Epoch: {} Average validation loss: {:.4f}  WPA: {:.4f}'.format(epoch, valid_loss, wpa))
     return valid_loss, wpa
 
 
@@ -321,8 +356,8 @@ def test(model, test_split, batch_size):
 if __name__ == "__main__":
 
     corpus = Corpus(
-        train_path='data/02-21.10way.clean',
-        # train_path='data/23.auto.clean',
+        # train_path='data/02-21.10way.clean',
+        train_path='data/23.auto.clean',
         validation_path='data/22.auto.clean',
         test_path='data/23.auto.clean'
     )
@@ -337,7 +372,8 @@ if __name__ == "__main__":
                 edim=353,
                 hdim=191,
                 zdim=13,
-                vocab=corpus.vocab)
+                vocab=corpus.vocab,
+                word_dropout_prob=0.4)
 
     model.to(device)
     optimizer = optim.Adam(model.parameters(), lr=1e-3)
