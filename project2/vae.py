@@ -26,8 +26,28 @@ parser.add_argument('--no-cuda', action='store_true', default=False,
                     help='enables CUDA training')
 parser.add_argument('--seed', type=int, default=1, metavar='S',
                     help='random seed (default: 1)')
-# parser.add_argument('--log-interval', type=int, default=10, metavar='N',
-#                     help='how many batches to wait before logging training status')
+parser.add_argument('--train', type=str, default='data/02-21.10way.clean',
+                    help='file path of the training data')
+parser.add_argument('--valid', type=str, default='data/22.auto.clean',
+                    help='file path of the validation data')
+parser.add_argument('--test', type=str, default='data/23.auto.clean',
+                    help='file path of the test data')
+parser.add_argument('--rnn', type=str, default='GRU', metavar='N',
+                    choices=['GRU', 'LSTM'],
+                    help='type of RNN (default: GRU)')
+parser.add_argument('--nlayers', type=int, default=1, metavar='N',
+                    help='number of RNN layers (default: 1)')
+parser.add_argument('--bidir', action='store_true', default=True,
+                    help='enables RNN bidirectionality')
+parser.add_argument('--edim', type=int, default=353, metavar='N',
+                    help='embedding dimensions (default: 353)')
+parser.add_argument('--hdim', type=int, default=191, metavar='N',
+                    help='hidden RNN dimensions (default: 191)')
+parser.add_argument('--zdim', type=int, default=13, metavar='N',
+                    help='number of latent codes (default: 13)')
+parser.add_argument('--word_dropout', type=float, default=0.4,
+                    help='dropout probability for an input token (default: 0.4)')
+
 args = parser.parse_args()
 args.cuda = not args.no_cuda and torch.cuda.is_available()
 
@@ -113,6 +133,26 @@ class Corpus(object):
         return [self.i2w[i] for i in seq]
 
 
+class Annealing(object):
+    def __init__(self, type='linear', nsteps=5000):
+        self.nsteps = nsteps
+        self.step = 0
+
+        if type not in ['linear', 'sigmoid']:
+            raise ValueError('Invalid annealing type: {}'.format(type))
+        self.type = type
+
+    def rate(self):
+        self.step += 1
+        if self.type == 'linear':
+            return self.step / self.nsteps
+        else:
+            raise NotImplementedError()
+
+    def reset(self):
+        self.step = 0
+
+
 class RNNEncoder(nn.Module):
     def __init__(self, rnn_type, nlayers, bidirectional, edim, hdim, zdim, vocab):
         super(RNNEncoder, self).__init__()
@@ -131,9 +171,7 @@ class RNNEncoder(nn.Module):
 
         self.embed = nn.Embedding(self.V, edim, padding_idx=0)
         self.encode = nn.Linear(packed_hdim, zdim)
-
         self.init_weights()
-
 
     def init_weights(self):
         initrange = 0.1
@@ -141,10 +179,8 @@ class RNNEncoder(nn.Module):
 
     def forward(self, input, hidden):
         output, hidden = self.rnn(self.embed(input), hidden)
-        len = output.size(0)
         output = output[-1, :, :]
-        return self.encode(output), len
-
+        return self.encode(output)
 
 
 class RNNDecoder(nn.Module):
@@ -159,7 +195,6 @@ class RNNDecoder(nn.Module):
         else:
             raise ValueError("""An invalid option for `--model` was supplied,
                                 options are ['LSTM', 'GRU']""")
-
 
         if bidirectional:
             packed_hdim = 2 * hdim
@@ -200,8 +235,8 @@ class VAE(nn.Module):
         h0 = torch.Tensor(torch.zeros(self.nlayers + int(self.bidirectional) * self.nlayers,
                                       input.size(1),
                                       self.hdim))
-        h, len = self.encoder(input, h0)
-        return self.project_loc(h), F.softplus(self.project_scale(h)), len
+        h = self.encoder(input, h0)
+        return self.project_loc(h), F.softplus(self.project_scale(h))
 
     def reparametrize(self, loc, scale):
         std = torch.exp(0.5 * scale)
@@ -221,7 +256,7 @@ class VAE(nn.Module):
         return self.decoder(input, z)
 
     def forward(self, input):
-        loc, scale, len = self.encode(input)
+        loc, scale = self.encode(input)
         # print('loc, scale', loc.shape, scale.shape, len)
         z = self.reparametrize(loc, scale)
         # print('z', z.shape)
@@ -234,7 +269,7 @@ def word_prediction_accuracy(logp, target):
     argmax = torch.argmax(logp, dim=1)
     return torch.mean(torch.eq(argmax, target).float())
 
-# Reconstruction + KL divergence losses summed over all elements and batch
+
 def loss_function(logp, target, loc, scale, annealing=None):
     NLL = torch.nn.NLLLoss(ignore_index=0)
     nll_loss = NLL(logp, target)
@@ -242,27 +277,6 @@ def loss_function(logp, target, loc, scale, annealing=None):
     if annealing:
         kl_loss *= annealing.rate()
     return nll_loss + kl_loss * kl_loss
-
-
-class Annealing(object):
-    def __init__(self, type='linear', nsteps=5000):
-        self.nsteps = nsteps
-        self.step = 0
-
-        if type not in ['linear', 'sigmoid']:
-            raise ValueError('Invalid annealing type: {}'.format(type))
-        self.type = type
-
-    def rate(self):
-        self.step += 1
-        if self.type == 'linear':
-            return self.step / self.nsteps
-        else:
-            raise NotImplementedError()
-
-    def reset(self):
-        self.step = 0
-
 
 
 def train(model, optimizer, train_split, batch_size, epoch):
@@ -275,12 +289,8 @@ def train(model, optimizer, train_split, batch_size, epoch):
         n_batches += 1
         data = data.to(device)
         target = target.to(device)
-        # print(data.shape)
-        # print(data)
         optimizer.zero_grad()
-        # print(data.shape)
         log_p, loc, scale = model(data)
-        # print('loss', log_p.shape, target.shape)
 
         loss = loss_function(log_p,
                              target,
@@ -291,16 +301,12 @@ def train(model, optimizer, train_split, batch_size, epoch):
         train_loss += loss.item()
         optimizer.step()
         wpa += word_prediction_accuracy(log_p, target)
-        # if batch_idx % args.log_interval == 0:
-        #     print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-        #         epoch, batch_idx * len(train_split), len(train_split),
-        #         100. * batch_idx / len(train_split),
-        #         loss.item() / len(data)))
 
     train_loss /= len(train_split)
     wpa /= n_batches
     print('====> Epoch: {} Average training loss: {:.4f}  WPA: {:.4f}'.format(epoch, train_loss, wpa))
     return train_loss, wpa
+
 
 def validate(model, optimizer, valid_split, batch_size, epoch):
     model.eval()
@@ -349,23 +355,18 @@ def test(model, test_split, batch_size):
 
 if __name__ == "__main__":
 
-    corpus = Corpus(
-        train_path='data/02-21.10way.clean',
-        # train_path='data/23.auto.clean',
-        validation_path='data/22.auto.clean',
-        test_path='data/23.auto.clean'
-    )
+    corpus = Corpus(args.train, args.valid, args.test)
     print('Vocabulary size:', len(corpus.vocab))
 
     model = VAE(args.batch_size,
-                rnn_type='GRU',
-                nlayers=1,
-                bidirectional=True,
-                edim=180, #353,
-                hdim=100, #191,
-                zdim=8,  #13,
+                rnn_type=args.rnn,
+                nlayers=args.nlayers,
+                bidirectional=args.bidir,
+                edim=args.edim,
+                hdim=args.hdim,
+                zdim=args.zdim,
                 vocab=corpus.vocab,
-                word_dropout_prob=0.4)
+                word_dropout_prob=args.word_dropout)
 
     model.to(device)
     optimizer = optim.Adam(model.parameters(), lr=1e-3)
