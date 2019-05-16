@@ -18,9 +18,9 @@ from torch.nn.utils.rnn import pad_sequence
 from tqdm import tqdm
 
 parser = argparse.ArgumentParser(description='Sentence VAE')
-parser.add_argument('--batch_size', type=int, default=128, metavar='N',
+parser.add_argument('--batch_size', type=int, default=64, metavar='N',
                     help='input batch size for training (default: 128)')
-parser.add_argument('--epochs', type=int, default=10, metavar='N',
+parser.add_argument('--epochs', type=int, default=20, metavar='N',
                     help='number of epochs to train (default: 10)')
 parser.add_argument('--no-cuda', action='store_true', default=False,
                     help='enables CUDA training')
@@ -349,30 +349,34 @@ def test(model, test_split, batch_size):
 if __name__ == "__main__":
 
     corpus = Corpus(
-        # train_path='data/02-21.10way.clean',
-        train_path='data/23.auto.clean',
+        train_path='data/02-21.10way.clean',
+        # train_path='data/23.auto.clean',
         validation_path='data/22.auto.clean',
         test_path='data/23.auto.clean'
     )
+    print('Vocabulary size:', len(corpus.vocab))
 
-    print('!!!  V =', len(corpus.vocab))
     model = VAE(args.batch_size,
                 rnn_type='GRU',
                 nlayers=1,
                 bidirectional=True,
-                edim=200, #353,
+                edim=180, #353,
                 hdim=100, #191,
-                zdim=10,  #13,
+                zdim=8,  #13,
                 vocab=corpus.vocab,
                 word_dropout_prob=0.4)
 
     model.to(device)
     optimizer = optim.Adam(model.parameters(), lr=1e-3)
 
-
+    train_stats = []
+    valid_stats = []
     for epoch in range(1, args.epochs + 1):
-        train(model, optimizer, corpus.training, args.batch_size, epoch)
-        validate(model, optimizer, corpus.validation, args.batch_size, epoch)
+        train_loss, train_wpa = train(model, optimizer, corpus.training, args.batch_size, epoch)
+        valid_loss, valid_wpa = validate(model, optimizer, corpus.validation, args.batch_size, epoch)
+
+        train_stats.append((train_loss, train_wpa))
+        valid_stats.append((valid_loss, valid_wpa))
         # test(model, corpus.test, batch_size)
 
 
