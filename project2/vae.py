@@ -307,18 +307,19 @@ def validate(model, optimizer, valid_split, batch_size, epoch):
     valid_loss = 0
     wpa = 0
     n_batches = 0
-    for batch_idx, (data, target) in enumerate(valid_split.data(batch_size)):
-        n_batches += 1
-        data = data.to(device)
-        target = target.to(device)
+    with torch.no_grad():
+        for batch_idx, (data, target) in enumerate(valid_split.data(batch_size)):
+            n_batches += 1
+            data = data.to(device)
+            target = target.to(device)
 
-        log_p, loc, scale = model(data)
-        loss = loss_function(log_p,
-                             target,
-                             loc,
-                             scale)
-        valid_loss += loss.item()
-        wpa += word_prediction_accuracy(log_p, target)
+            log_p, loc, scale = model(data)
+            loss = loss_function(log_p,
+                                 target,
+                                 loc,
+                                 scale)
+            valid_loss += loss.item()
+            wpa += word_prediction_accuracy(log_p, target)
 
     valid_loss /= len(valid_split)
     wpa /= n_batches
