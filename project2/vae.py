@@ -273,7 +273,7 @@ def word_prediction_accuracy(logp, target):
 def loss_function(logp, target, loc, scale, annealing=None):
     NLL = torch.nn.NLLLoss(ignore_index=0)
     nll_loss = NLL(logp, target)
-    kl_loss = -0.5 * torch.sum(1 + scale - loc - scale.exp())
+    kl_loss = -0.5 * torch.sum(1 + (scale ** 2) - (loc ** 2) - (scale ** 2).exp())
     if annealing:
         kl_loss *= annealing.rate()
     return nll_loss + kl_loss * kl_loss
