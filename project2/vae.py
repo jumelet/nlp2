@@ -16,6 +16,8 @@ from nltk.tree import Tree
 from collections import Counter
 from torch.nn.utils.rnn import pad_sequence
 from tqdm import tqdm
+from torch.distributions.multivariate_normal import MultivariateNormal as mvn
+
 
 parser = argparse.ArgumentParser(description='Sentence VAE')
 parser.add_argument('--batch_size', type=int, default=64, metavar='N',
@@ -64,7 +66,7 @@ UNK = '[UNK]'
 
 def batches(l, n):
     for i in range(0, len(l), n):
-        yield l[i:i+n]
+        yield l[i:i + n]
 
 
 class Split(object):
@@ -227,6 +229,7 @@ class VAE(nn.Module):
         self.project_scale = nn.Linear(zdim, zdim)
 
         self.nlayers = nlayers
+        self.zdim = zdim
         self.bidirectional = bidirectional
         self.hdim = hdim
         self.dropout_prob = word_dropout_prob
@@ -286,6 +289,7 @@ def train(model, optimizer, train_split, batch_size, epoch):
     n_batches = 0
     annealing = Annealing('linear', 2000)
     for batch_idx, (data, target) in enumerate(tqdm(train_split.data(batch_size), total=len(train_split) // batch_size)):
+
         n_batches += 1
         data = data.to(device)
         target = target.to(device)
@@ -353,6 +357,56 @@ def test(model, test_split, batch_size):
     return test_loss, wpa
 
 
+def approximate_ll_sentence(model, sent, target, n_samples=16):
+
+    NLL = torch.nn.NLLLoss(ignore_index=0)
+    samples = []
+
+    standard_mvn = mvn(torch.tensor([0.] * model.zdim), torch.eye(model.zdim))
+
+    loc, scale = model.encode(sent)
+    var = scale ** 2
+    q_z_x = mvn(loc, torch.diag(var.squeeze(0)))
+
+    # perform importance sampling
+    for s in range(n_samples):
+
+        # sampling a z
+        z_s = q_z_x.sample((1,))
+
+        prob_under_q = torch.exp(q_z_x.log_prob(z_s))
+
+        prob_under_standard_mvn = torch.exp(standard_mvn.log_prob(z_s))
+
+        logp = model.decode(sent, z_s)
+
+        p_x_z = torch.exp(-NLL(logp.squeeze(1), target.squeeze(1)))
+
+        impotance_weight = prob_under_standard_mvn / prob_under_q
+
+        samples.append(p_x_z * impotance_weight)
+
+    return torch.log(torch.mean(torch.tensor(samples)))
+
+
+def approximate_nll_test(model, test_split):
+    model.eval()
+    test_loss = 0
+    approx_nll_test = 0
+    n_sent = 0
+    with torch.no_grad():
+
+        for i, (data, target) in enumerate(test_split.data(1)):
+            n_sent += 1
+            data = data.to(device)
+            target = target.to(device)
+
+            nll_approx_sent = approximate_nll(model, data, target, n_samples=2)
+            approx_nll_test += nll_approx_sent
+
+    return -approx_nll_test / n_sent
+
+
 if __name__ == "__main__":
 
     corpus = Corpus(args.train, args.valid, args.test)
@@ -373,6 +427,7 @@ if __name__ == "__main__":
 
     train_stats = []
     valid_stats = []
+
     for epoch in range(1, args.epochs + 1):
         train_loss, train_wpa = train(model, optimizer, corpus.training, args.batch_size, epoch)
         valid_loss, valid_wpa = validate(model, optimizer, corpus.validation, args.batch_size, epoch)
@@ -380,7 +435,6 @@ if __name__ == "__main__":
         train_stats.append((train_loss, train_wpa))
         valid_stats.append((valid_loss, valid_wpa))
         # test(model, corpus.test, batch_size)
-
 
 
 ##########################################################################################
