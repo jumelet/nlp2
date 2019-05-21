@@ -16,7 +16,7 @@ from nltk.tree import Tree
 from collections import Counter
 from torch.nn.utils.rnn import pad_sequence
 from tqdm import tqdm
-from torch.distributions.multivariate_normal import MultivariateNormal as mvn
+from torch.distributions.multivariate_normal import MultivariateNormal
 
 
 parser = argparse.ArgumentParser(description='Sentence VAE')
@@ -273,13 +273,51 @@ def word_prediction_accuracy(logp, target):
     return torch.mean(torch.eq(argmax, target).float())
 
 
-def loss_function(logp, target, loc, scale, annealing=None):
-    NLL = torch.nn.NLLLoss(ignore_index=0)
-    nll_loss = NLL(logp, target)
+def KLLoss(loc, scale, annealing=None):
     kl_loss = -0.5 * torch.sum(1 + (scale ** 2) - (loc ** 2) - (scale ** 2).exp())
     if annealing:
         kl_loss *= annealing.rate()
-    return nll_loss + kl_loss * kl_loss
+    return kl_loss
+
+
+def loss_function(logp, target, loc, scale, annealing=None):
+    NLL = torch.nn.NLLLoss(ignore_index=0)
+    nll_loss = NLL(logp, target)
+    kl_loss = KLLoss(loc, scale, annealing)
+    return nll_loss.item() + kl_loss.item()
+
+
+def approximate_loss_function(model, loc, scale, sent, target, nsamples, annealing=None):
+    nll_loss = approximate_sentence_NLL(model, loc, scale, sent, target, nsamples)
+    kl_loss = KLLoss(loc, scale, annealing)
+    return nll_loss + kl_loss
+
+
+def approximate_sentence_NLL(model, loc, scale, sent, target, nsamples=16):
+    encoder_distribution = MultivariateNormal(loc, torch.diag((scale ** 2).squeeze(0)))
+    prior_distribution = MultivariateNormal(torch.tensor([0.] * loc.dim(-1)), torch.eye(loc.dim(-1)))
+
+    NLL = torch.nn.NLLLoss(ignore_index=0, reduction='sum')
+    samples = []
+    # perform importance sampling
+    for s in range(nsamples):
+        # sampling a z
+        z = encoder_distribution.sample((1,))
+
+        # the probablity of z under the encoder distribution
+        q_z_x = torch.exp(encoder_distribution.log_prob(z))
+
+        # the probability of z under a gaussian prior
+        p_z = torch.exp(prior_distribution.log_prob(z))
+
+        # the sentence given the latent variable (the decoder probability)
+        logp = model.decode(sent, z)
+        p_x_z = torch.exp(- NLL(logp.squeeze(1), target.squeeze(1)))
+
+        p_xz = p_x_z * p_z
+        samples.append(p_xz / q_z_x)
+
+    return - torch.mean(torch.log(torch.tensor(samples)))
 
 
 def train(model, optimizer, train_split, batch_size, epoch):
@@ -312,7 +350,7 @@ def train(model, optimizer, train_split, batch_size, epoch):
     return train_loss, wpa
 
 
-def validate(model, optimizer, valid_split, batch_size, epoch):
+def validate(model, valid_split, batch_size, epoch):
     model.eval()
     valid_loss = 0
     wpa = 0
@@ -337,74 +375,22 @@ def validate(model, optimizer, valid_split, batch_size, epoch):
     return valid_loss, wpa
 
 
-def test(model, test_split, batch_size):
+def test(model, test_split, batch_size, nsamples=16):
     model.eval()
     test_loss = 0
+    wpa = 0
     with torch.no_grad():
-        wpa = 0
-        n_batches = 0
-        for i, (data, target) in enumerate(test_split.data(batch_size)):
-            n_batches += 1
+        for (data, target) in test_split.data(1):
             data = data.to(device)
             target = target.to(device)
-            log_p, loc, scale = model(data)
-            test_loss += loss_function(log_p, target, loc, scale).item()
-            wpa += word_prediction_accuracy(log_p, target)
+            logp, loc, scale = model(data)
+            test_loss += approximate_loss_function(model, loc, scale, data, target, nsamples).item()
+            wpa += word_prediction_accuracy(logp, target)
 
     test_loss /= len(test_split)
-    wpa /= n_batches
+    wpa /= len(test_split)
     print('====> Test set loss: {:.4f}WPA: {:.4f}'.format(test_loss, wpa))
     return test_loss, wpa
-
-
-def approximate_ll_sentence(model, sent, target, n_samples=16):
-
-    NLL = torch.nn.NLLLoss(ignore_index=0)
-    samples = []
-
-    standard_mvn = mvn(torch.tensor([0.] * model.zdim), torch.eye(model.zdim))
-
-    loc, scale = model.encode(sent)
-    var = scale ** 2
-    q_z_x = mvn(loc, torch.diag(var.squeeze(0)))
-
-    # perform importance sampling
-    for s in range(n_samples):
-
-        # sampling a z
-        z_s = q_z_x.sample((1,))
-
-        prob_under_q = torch.exp(q_z_x.log_prob(z_s))
-
-        prob_under_standard_mvn = torch.exp(standard_mvn.log_prob(z_s))
-
-        logp = model.decode(sent, z_s)
-
-        p_x_z = torch.exp(-NLL(logp.squeeze(1), target.squeeze(1)))
-
-        impotance_weight = prob_under_standard_mvn / prob_under_q
-
-        samples.append(p_x_z * impotance_weight)
-
-    return torch.log(torch.mean(torch.tensor(samples)))
-
-
-def approximate_nll_test(model, test_split):
-    model.eval()
-    test_loss = 0
-    approx_nll_test = 0
-    n_sent = 0
-    with torch.no_grad():
-
-        for i, (data, target) in enumerate(test_split.data(1)):
-            n_sent += 1
-            data = data.to(device)
-            target = target.to(device)
-
-            nll_approx_sent = approximate_nll(model, data, target, n_samples=2)
-            approx_nll_test += nll_approx_sent
-
-    return -approx_nll_test / n_sent
 
 
 if __name__ == "__main__":
