@@ -317,7 +317,7 @@ def approximate_sentence_NLL(model, loc, scale, sent, target, nsamples=16):
         p_xz = p_x_z * p_z
         samples.append(p_xz / q_z_x)
 
-    return - torch.mean(torch.log(torch.tensor(samples)))
+    return - torch.log(torch.mean(torch.tensor(samples)))
 
 
 def train(model, optimizer, train_split, batch_size, epoch):
