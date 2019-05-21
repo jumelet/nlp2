@@ -292,6 +292,27 @@ def loss_function(logp, target, loc, scale, annealing=None):
 #     kl_loss = KLLoss(loc, scale, annealing)
 #     return nll_loss + kl_loss
 
+def logsumexp(inputs, dim=None, keepdim=False):
+    """Numerically stable logsumexp.
+
+    Args:
+        inputs: A Variable with any shape.
+        dim: An integer.
+        keepdim: A boolean.
+
+    Returns:
+        Equivalent of log(sum(exp(inputs), dim=dim, keepdim=keepdim)).
+    """
+
+    if dim is None:
+        inputs = inputs.view(-1)
+        dim = 0
+    s, _ = torch.max(inputs, dim=dim, keepdim=True)
+    outputs = s + (inputs - s).exp().sum(dim=dim, keepdim=True).log()
+    if not keepdim:
+        outputs = outputs.squeeze(dim)
+    return outputs
+
 
 def approximate_sentence_NLL(model, loc, scale, sent, target, nsamples=16):
     encoder_distribution = MultivariateNormal(loc, torch.diag((scale ** 2).squeeze(0)))
@@ -305,19 +326,19 @@ def approximate_sentence_NLL(model, loc, scale, sent, target, nsamples=16):
         z = encoder_distribution.sample((1,))
 
         # the probablity of z under the encoder distribution
-        q_z_x = torch.exp(encoder_distribution.log_prob(z))
+        q_z_x = encoder_distribution.log_prob(z)
 
         # the probability of z under a gaussian prior
-        p_z = torch.exp(prior_distribution.log_prob(z))
+        p_z = prior_distribution.log_prob(z)
 
         # the sentence given the latent variable (the decoder probability)
         logp = model.decode(sent, z)
-        p_x_z = torch.exp(- NLL(logp.squeeze(1), target.squeeze(1)))
+        p_x_z = - NLL(logp.squeeze(1), target.squeeze(1))
 
-        p_xz = p_x_z * p_z
-        samples.append(p_xz / q_z_x)
+        p_xz = p_x_z + p_z
+        samples.append(p_xz - q_z_x)
 
-    return - torch.log(torch.mean(torch.tensor(samples)))
+    return - (torch.log(torch.tensor(float(nsamples))) - logsumexp(torch.tensor(samples)))
 
 
 def train(model, optimizer, train_split, batch_size, epoch):
@@ -420,7 +441,6 @@ if __name__ == "__main__":
 
         train_stats.append((train_loss, train_wpa))
         valid_stats.append((valid_loss, valid_wpa))
-        test(model, corpus.test)
 
 
 ##########################################################################################
