@@ -284,18 +284,18 @@ def loss_function(logp, target, loc, scale, annealing=None):
     NLL = torch.nn.NLLLoss(ignore_index=0)
     nll_loss = NLL(logp, target)
     kl_loss = KLLoss(loc, scale, annealing)
-    return nll_loss.item() + kl_loss.item()
-
-
-def approximate_loss_function(model, loc, scale, sent, target, nsamples, annealing=None):
-    nll_loss = approximate_sentence_NLL(model, loc, scale, sent, target, nsamples)
-    kl_loss = KLLoss(loc, scale, annealing)
     return nll_loss + kl_loss
+
+
+# def approximate_loss_function(model, loc, scale, sent, target, nsamples, annealing=None):
+#     nll_loss = approximate_sentence_NLL(model, loc, scale, sent, target, nsamples)
+#     kl_loss = KLLoss(loc, scale, annealing)
+#     return nll_loss + kl_loss
 
 
 def approximate_sentence_NLL(model, loc, scale, sent, target, nsamples=16):
     encoder_distribution = MultivariateNormal(loc, torch.diag((scale ** 2).squeeze(0)))
-    prior_distribution = MultivariateNormal(torch.tensor([0.] * loc.dim(-1)), torch.eye(loc.dim(-1)))
+    prior_distribution = MultivariateNormal(torch.tensor([0.] * loc.size(-1)), torch.eye(loc.size(-1)))
 
     NLL = torch.nn.NLLLoss(ignore_index=0, reduction='sum')
     samples = []
@@ -375,7 +375,7 @@ def validate(model, valid_split, batch_size, epoch):
     return valid_loss, wpa
 
 
-def test(model, test_split, batch_size, nsamples=16):
+def test(model, test_split, nsamples=16):
     model.eval()
     test_loss = 0
     wpa = 0
@@ -384,7 +384,7 @@ def test(model, test_split, batch_size, nsamples=16):
             data = data.to(device)
             target = target.to(device)
             logp, loc, scale = model(data)
-            test_loss += approximate_loss_function(model, loc, scale, data, target, nsamples).item()
+            test_loss += approximate_sentence_NLL(model, loc, scale, data, target, nsamples).item()
             wpa += word_prediction_accuracy(logp, target)
 
     test_loss /= len(test_split)
@@ -416,11 +416,11 @@ if __name__ == "__main__":
 
     for epoch in range(1, args.epochs + 1):
         train_loss, train_wpa = train(model, optimizer, corpus.training, args.batch_size, epoch)
-        valid_loss, valid_wpa = validate(model, optimizer, corpus.validation, args.batch_size, epoch)
+        valid_loss, valid_wpa = validate(model, corpus.validation, args.batch_size, epoch)
 
         train_stats.append((train_loss, train_wpa))
         valid_stats.append((valid_loss, valid_wpa))
-        # test(model, corpus.test, batch_size)
+        test(model, corpus.test)
 
 
 ##########################################################################################
