@@ -1,9 +1,6 @@
-
-from __future__ import division
-from __future__ import print_function
-
 import torch.nn as nn
 from torch.autograd import Variable
+from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 
 class LM(nn.Module):
@@ -50,21 +47,33 @@ class LM(nn.Module):
         self.decoder.bias.data.fill_(0)
         self.decoder.weight.data.uniform_(-initrange, initrange)
 
-    def forward(self, x, hidden=None):
-        encoded = self.encoder(x)
+    def forward(self, input_, lengths=None, hidden=None):
+        encoded = self.encoder(input_)
+
+        if lengths is not None:
+            encoded = pack_padded_sequence(encoded,
+                                           lengths=lengths,
+                                           batch_first=True)
 
         if hidden is None:
             hidden = self.hidden
 
-        x= self.rnn(encoded, hidden)
-        out = self.decoder(h)
+        final_h, new_hidden = self.rnn(encoded, hidden)
+        if hidden is None:
+            self.hidden = new_hidden
 
-        return out, hidden
+        if lengths is not None:
+            final_h = pad_packed_sequence(final_h, batch_first=True)[0]
+        out = self.decoder(final_h)
 
-    def init_hidden(self):
+        return out, new_hidden
+
+    def init_hidden(self, bsz=None):
+        if bsz is None:
+            bsz = self.batch_size
         weight = next(self.parameters()).data
-        return (Variable(weight.new(self.lstm_num_layers, self.batch_size, self.lstm_num_hidden).zero_()),
-                Variable(weight.new(self.lstm_num_layers, self.batch_size, self.lstm_num_hidden).zero_()))
+        return (Variable(weight.new(self.lstm_num_layers, bsz, self.lstm_num_hidden).zero_()),
+                Variable(weight.new(self.lstm_num_layers, bsz, self.lstm_num_hidden).zero_()))
 
     def reset_hidden(self):
         self.hidden = tuple(Variable(h.data) for h in self.hidden)
