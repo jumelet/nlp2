@@ -29,7 +29,7 @@ parser.add_argument('--no-cuda', action='store_true', default=False,
                     help='enables CUDA training')
 parser.add_argument('--seed', type=int, default=1, metavar='S',
                     help='random seed (default: 1)')
-parser.add_argument('--train', type=str, default='data/02-21.10way.clean',
+parser.add_argument('--train', type=str, default='data/23.auto.clean',  #default='data/02-21.10way.clean',
                     help='file path of the training data')
 parser.add_argument('--valid', type=str, default='data/22.auto.clean',
                     help='file path of the validation data')
@@ -232,12 +232,14 @@ class VAE(nn.Module):
         self.bidirectional = bidirectional
         self.hdim = hdim
         self.dropout_prob = word_dropout_prob
+        self.hidden = torch.Tensor(torch.zeros(self.nlayers + int(self.bidirectional) * self.nlayers,
+                                               batch_size,
+                                               self.hdim))
 
-    def encode(self, input):
-        h0 = torch.Tensor(torch.zeros(self.nlayers + int(self.bidirectional) * self.nlayers,
-                                      input.size(1),
-                                      self.hdim))
-        h = self.encoder(input, h0)
+    def encode(self, input, hidden=None):
+        if hidden is None:
+            hidden = self.hidden
+        h = self.encoder(input, hidden)
         return self.project_loc(h), F.softplus(self.project_scale(h))
 
     def reparametrize(self, loc, scale):
