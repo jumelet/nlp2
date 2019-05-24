@@ -139,15 +139,20 @@ def train(config, model, train_data, valid_data):
         losses = checkpoint['losses']
     else:
         epoch = 0
-        losses = []
-        wpas = []
+        avg_train_losses = []
+        avg_train_wpas = []
+        avg_valid_losses = []
+        avg_valid_wpas = []
 
     results_dir = config.get('results_dir', str(datetime.datetime.now()).replace(' ', '_')[5:16])
-    os.mkdir(os.path.join('/home/mariog/projects/nlp2/project2/pickles', results_dir))
+    os.mkdir(os.path.join('pickles', results_dir))
     print('Saving results to:', results_dir)
 
+    lowest_epoch_loss = (float('inf'), 0)
     print('Starting training!')
     for epoch in tqdm(range(epoch + 1, epoch + config['epochs'] + 1)):
+        epoch_losses = []
+        epoch_wpas = []
         for i, batch in enumerate(tqdm(train_data)):
             model.train()
             model.encoder.reset_hidden()
@@ -164,26 +169,43 @@ def train(config, model, train_data, valid_data):
             loss.backward()
             optimizer.step()
 
-            losses.append(loss.item())
-            wpas.append(word_prediction_accuracy(log_p, target).item())
+            epoch_losses.append(loss.item())
+            epoch_wpas.append(word_prediction_accuracy(log_p, target).item())
 
+        avg_epoch_loss, avg_epoch_wpa = np.mean(epoch_losses), np.mean(epoch_wpas)
         print('\n====> Epoch: {} Average training loss: {:.4f}  Average WPA: {:.4f}'.format(epoch,
-                                                                                            np.mean(losses),
-                                                                                            np.mean(wpas)))
-        valid_losses, valid_wpas = validate(model, valid_data)
+                                                                                            avg_epoch_loss,
+                                                                                            avg_epoch_wpa))
+        valid_epoch_losses, valid_epoch_wpas = validate(model, valid_data)
+        avg_valid_epoch_loss, avg_valid_epoch_wpa = np.mean(valid_epoch_losses), np.mean(valid_epoch_wpas)
         print('\n====> Epoch: {} Average validation loss: {:.4f}  Average WPA: {:.4f}'.format(epoch,
-                                                                                              np.mean(valid_losses),
-                                                                                              np.mean(valid_wpas)))
+                                                                                              avg_valid_epoch_loss,
+                                                                                              avg_valid_epoch_wpa))
 
-        torch.save({
-            'epoch': epoch,
-            'model_state_dict': model.state_dict(),
-            'optimizer_state_dict': optimizer.state_dict(),
-            'losses': losses,
-            'valid_losses': valid_losses,
-            'wpas': wpas,
-            'valid_wpas': valid_wpas
-        }, '/home/mariog/projects/nlp2/project2/pickles/{}/state_dict_e{}.pt'.format(results_dir, epoch))
+        avg_train_losses.append(avg_epoch_loss)
+        avg_train_wpas.append(avg_epoch_wpa)
+        avg_valid_losses.append(avg_valid_epoch_loss)
+        avg_valid_wpas.append(avg_valid_epoch_wpa)
+
+        if avg_valid_epoch_loss <= lowest_epoch_loss[0]:
+            pickles_path = '/home/mariog/projects/nlp2/project2/pickles'
+            torch.save({
+                'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+            }, '{}/{}/state_dict_e{}.pt'.format(pickles_path, results_dir, epoch))
+
+            lowest_epoch_loss = (avg_valid_epoch_loss, epoch)
+            old_path = '{}/{}/state_dict_e{}.pt'.format(pickles_path, results_dir, lowest_epoch_loss[1])
+            if os.path.exists(old_path):
+                os.remove(old_path)
+
+    torch.save({
+        'avg_train_losses': avg_train_losses,
+        'avg_train_wpas': avg_train_wpas,
+        'avg_valid_losses': avg_valid_losses,
+        'avg_valid_wpas': avg_valid_wpas
+    }, '/home/mariog/projects/nlp2/project2/pickles/{}/statistics.pt'.format(results_dir))
 
     return
 
