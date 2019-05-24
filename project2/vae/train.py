@@ -11,7 +11,7 @@ from scipy.special import logsumexp
 import numpy as np
 from tqdm import tqdm
 
-from project2.vae.vae import SentenceVAE
+from vae.vae import SentenceVAE
 
 
 EOS = '[EOS]'
@@ -83,7 +83,8 @@ def approximate_sentence_NLL(model, loc, scale, sent, target, nsamples=16):
 
 def initialize(config):
     print('Corpus initialization...')
-
+    
+    device = torch.device(config['device'])
     torch.manual_seed(config['seed'])
 
     field = Field(batch_first=True, tokenize=lambda s: [BOS] + s.split(' ') + [EOS])
@@ -120,7 +121,8 @@ def initialize(config):
                 hdim=config['hidden_dim'],
                 zdim=config['latent_dim'],
                 vocab_len=len(vocab),
-                word_dropout_prob=config['word_dropout_prob'])
+                word_dropout_prob=config['word_dropout_prob'],
+                device=device)
 
     return model, vocab, train_iterator, valid_iterator, test_iterator
 
@@ -141,7 +143,7 @@ def train(config, model, train_data, valid_data):
         wpas = []
 
     results_dir = config.get('results_dir', str(datetime.datetime.now()).replace(' ', '_')[5:16])
-    os.mkdir(os.path.join('pickles', results_dir))
+    os.mkdir(os.path.join('/home/mariog/projects/nlp2/project2/pickles', results_dir))
     print('Saving results to:', results_dir)
 
     print('Starting training!')
@@ -181,7 +183,7 @@ def train(config, model, train_data, valid_data):
             'valid_losses': valid_losses,
             'wpas': wpas,
             'valid_wpas': valid_wpas
-        }, f'pickles/{results_dir}/state_dict_e{epoch}.pt')
+        }, '/home/mariog/projects/nlp2/project2/pickles/{}/state_dict_e{}.pt'.format(results_dir, epoch))
 
     return
 

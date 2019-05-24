@@ -15,22 +15,23 @@ from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 
 class RNNEncoder(nn.Module):
-    def __init__(self, rnn_type, nlayers, bidirectional, edim, hdim, zdim, vocab_len, batch_size):
+    def __init__(self, rnn_type, nlayers, bidirectional, edim, hdim, zdim, vocab_len, batch_size, device):
         super(RNNEncoder, self).__init__()
         self.V = vocab_len
         self.batch_size = batch_size
         self.nlayers = nlayers + int(bidirectional) * nlayers
         self.hdim = hdim
+        self.device = device
 
         if rnn_type in ['LSTM', 'GRU']:
-            self.rnn = getattr(nn, rnn_type)(edim, hdim, nlayers, bidirectional=bidirectional, batch_first=True)
+            self.rnn = getattr(nn, rnn_type)(edim, hdim, nlayers, bidirectional=bidirectional, batch_first=True).to(device)
         else:
             raise ValueError("""An invalid option for `--model` was supplied,
                                 options are ['LSTM', 'GRU']""")
 
 
-        self.embed = nn.Embedding(self.V, edim, padding_idx=0)
-        self.encode = nn.Linear(hdim + int(bidirectional) * hdim, zdim)
+        self.embed = nn.Embedding(self.V, edim, padding_idx=0).to(device)
+        self.encode = nn.Linear(hdim + int(bidirectional) * hdim, zdim).to(device)
         self.init_weights()
         self.reset_hidden()
 
@@ -61,18 +62,18 @@ class RNNEncoder(nn.Module):
     def reset_hidden(self, bsz=None):
         if bsz is None:
             bsz = self.batch_size
-        self.hidden = torch.zeros(self.nlayers, bsz, self.hdim)
+        self.hidden = torch.zeros(self.nlayers, bsz, self.hdim).to(self.device)
 
 
 class RNNDecoder(nn.Module):
-    def __init__(self, rnn_type, nlayers, bidirectional, edim, hdim, zdim, vocab_len):
+    def __init__(self, rnn_type, nlayers, bidirectional, edim, hdim, zdim, vocab_len, device):
         super(RNNDecoder, self).__init__()
 
         self.V = vocab_len
         self.hdim = hdim
 
         if rnn_type in ['LSTM', 'GRU']:
-            self.rnn = getattr(nn, rnn_type)(edim, hdim, nlayers, bidirectional=bidirectional, batch_first=True)
+            self.rnn = getattr(nn, rnn_type)(edim, hdim, nlayers, bidirectional=bidirectional, batch_first=True).to(device)
         else:
             raise ValueError("""An invalid option for `--model` was supplied,
                                 options are ['LSTM', 'GRU']""")
@@ -82,9 +83,9 @@ class RNNDecoder(nn.Module):
         else:
             packed_hdim = hdim
 
-        self.embed = nn.Embedding(self.V, edim, padding_idx=0)
-        self.decode = nn.Linear(zdim, packed_hdim)
-        self.tovocab = nn.Linear(packed_hdim, self.V)
+        self.embed = nn.Embedding(self.V, edim, padding_idx=0).to(device)
+        self.decode = nn.Linear(zdim, packed_hdim).to(device)
+        self.tovocab = nn.Linear(packed_hdim, self.V).to(device)
         self.init_weights()
 
     def init_weights(self):
@@ -103,13 +104,13 @@ class RNNDecoder(nn.Module):
 
 
 class SentenceVAE(nn.Module):
-    def __init__(self, batch_size, rnn_type, nlayers, bidirectional, edim, hdim, zdim, vocab_len, word_dropout_prob=0.):
+    def __init__(self, batch_size, rnn_type, nlayers, bidirectional, edim, hdim, zdim, vocab_len, word_dropout_prob, device):
         super(SentenceVAE, self).__init__()
-
-        self.encoder = RNNEncoder(rnn_type, nlayers, bidirectional, edim, hdim, zdim, vocab_len, batch_size)
-        self.decoder = RNNDecoder(rnn_type, nlayers, bidirectional, edim, hdim, zdim, vocab_len)
-        self.project_loc = nn.Linear(zdim, zdim)
-        self.project_scale = nn.Linear(zdim, zdim)
+        
+        self.encoder = RNNEncoder(rnn_type, nlayers, bidirectional, edim, hdim, zdim, vocab_len, batch_size, device)
+        self.decoder = RNNDecoder(rnn_type, nlayers, bidirectional, edim, hdim, zdim, vocab_len, device)
+        self.project_loc = nn.Linear(zdim, zdim).to(device)
+        self.project_scale = nn.Linear(zdim, zdim).to(device)
 
         self.nlayers = nlayers
         self.zdim = zdim
