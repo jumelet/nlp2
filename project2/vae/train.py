@@ -153,7 +153,7 @@ def train(config, model, train_data, valid_data):
     for epoch in tqdm(range(epoch + 1, epoch + config['epochs'] + 1)):
         epoch_losses = []
         epoch_wpas = []
-        for i, batch in enumerate(tqdm(train_data)):
+        for i, batch in enumerate(train_data):
             model.train()
             model.encoder.reset_hidden()
             optimizer.zero_grad()
@@ -188,6 +188,7 @@ def train(config, model, train_data, valid_data):
         avg_valid_wpas.append(avg_valid_epoch_wpa)
 
         if avg_valid_epoch_loss <= lowest_epoch_loss[0]:
+            print('!!!')
             pickles_path = '/home/mariog/projects/nlp2/project2/pickles'
             torch.save({
                 'epoch': epoch,
@@ -217,7 +218,7 @@ def validate(model, valid_data):
 
     print('Starting validation!')
     with torch.no_grad():
-        for i, batch in enumerate(tqdm(valid_data)):
+        for i, batch in enumerate(valid_data):
             text, target = batch.text.t(), batch.target.t()
             log_p, loc, scale = model(text)
             loss = loss_function(log_p,
@@ -243,7 +244,7 @@ def test(config, model, test_data):
 
     print('Starting test!')
     with torch.no_grad():
-        for i, batch in enumerate(tqdm(test_data)):
+        for i, batch in enumerate(test_data):
             text, target = batch.text.t(), batch.target.t()
             log_p, loc, scale = model(text)
             losses.append(approximate_sentence_NLL(model, loc, scale, text, target, nsamples))
