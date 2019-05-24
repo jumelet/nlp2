@@ -165,7 +165,7 @@ def train(config, model, train_data, valid_data):
             optimizer.step()
 
             losses.append(loss.item())
-            wpas.append(word_prediction_accuracy(log_p, target))
+            wpas.append(word_prediction_accuracy(log_p, target).item())
 
         print('\n====> Epoch: {} Average training loss: {:.4f}  Average WPA: {:.4f}'.format(epoch,
                                                                                             np.mean(losses),
@@ -204,7 +204,7 @@ def validate(model, valid_data):
                                  scale,
                                  annealing=None)
             losses.append(loss.item())
-            wpas.append(word_prediction_accuracy(log_p, target))
+            wpas.append(word_prediction_accuracy(log_p, target).item())
     return losses, wpas
 
 
@@ -225,7 +225,7 @@ def test(config, model, test_data):
             text, target = batch.text.t(), batch.target.t()
             log_p, loc, scale = model(text)
             losses.append(approximate_sentence_NLL(model, loc, scale, text, target, nsamples))
-            wpas.append(word_prediction_accuracy(log_p, target))
+            wpas.append(word_prediction_accuracy(log_p, target).item())
 
     print('\n====> Average test set loss: {:.4f}   Average WPA: {:.4f}'.format(np.mean(losses), np.mean(wpas)))
     return losses, wpas

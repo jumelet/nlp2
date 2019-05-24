@@ -19,7 +19,8 @@ class RNNEncoder(nn.Module):
         super(RNNEncoder, self).__init__()
         self.V = vocab_len
         self.batch_size = batch_size
-        self.nlayers = nlayers + int(bidirectional) * nlayers
+        ndirections = 2 if bidirectional else 1
+        self.nlayers = nlayers * ndirections
         self.hdim = hdim
         self.device = device
 
@@ -31,7 +32,7 @@ class RNNEncoder(nn.Module):
 
 
         self.embed = nn.Embedding(self.V, edim, padding_idx=0).to(device)
-        self.encode = nn.Linear(hdim + int(bidirectional) * hdim, zdim).to(device)
+        self.encode = nn.Linear(hdim * ndirections, zdim).to(device)
         self.init_weights()
         self.reset_hidden()
 
@@ -52,12 +53,12 @@ class RNNEncoder(nn.Module):
             hidden = self.hidden
 
         output, hidden = self.rnn(embed_sequence, hidden)
-        final_h = output[:, -1, :]
+        last_output = output[:, -1, :]
 
         if lengths is not None:
-            final_h = pad_packed_sequence(final_h, batch_first=True)[0]
+            last_output = pad_packed_sequence(last_output, batch_first=True)[0]
 
-        return self.encode(final_h)
+        return self.encode(last_output)
 
     def reset_hidden(self, bsz=None):
         if bsz is None:
@@ -69,8 +70,10 @@ class RNNDecoder(nn.Module):
     def __init__(self, rnn_type, nlayers, bidirectional, edim, hdim, zdim, vocab_len, device):
         super(RNNDecoder, self).__init__()
 
+        ndirections = 2 if bidirectional else 1
         self.V = vocab_len
         self.hdim = hdim
+        self.nlayers = nlayers * ndirections
 
         if rnn_type in ['LSTM', 'GRU']:
             self.rnn = getattr(nn, rnn_type)(edim, hdim, nlayers, bidirectional=bidirectional, batch_first=True).to(device)
@@ -78,14 +81,9 @@ class RNNDecoder(nn.Module):
             raise ValueError("""An invalid option for `--model` was supplied,
                                 options are ['LSTM', 'GRU']""")
 
-        if bidirectional:
-            packed_hdim = 2 * hdim
-        else:
-            packed_hdim = hdim
-
         self.embed = nn.Embedding(self.V, edim, padding_idx=0).to(device)
-        self.decode = nn.Linear(zdim, packed_hdim).to(device)
-        self.tovocab = nn.Linear(packed_hdim, self.V).to(device)
+        self.decode = nn.Linear(zdim, self.hdim * self.nlayers).to(device)
+        self.tovocab = nn.Linear(self.hdim * ndirections, self.V).to(device)
         self.init_weights()
 
     def init_weights(self):
@@ -112,10 +110,6 @@ class SentenceVAE(nn.Module):
         self.project_loc = nn.Linear(zdim, zdim).to(device)
         self.project_scale = nn.Linear(zdim, zdim).to(device)
 
-        self.nlayers = nlayers
-        self.zdim = zdim
-        self.bidirectional = bidirectional
-        self.hdim = hdim
         self.dropout_prob = word_dropout_prob
 
     def encode(self, input, hidden=None):
