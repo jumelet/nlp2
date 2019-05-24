@@ -7,57 +7,20 @@ Taking inspiration from https://github.com/pytorch/examples/blob/master/vae/main
 """
 
 from __future__ import print_function
-import argparse
+import datetime
+import os
+
 import torch
 import torch.utils.data
 from torch import nn, optim
 from torch.nn import functional as F
-from nltk.tree import Tree
-from collections import Counter
-from torch.nn.utils.rnn import pad_sequence
+from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
+from torchtext.data import BPTTIterator, Field
+from torchtext.datasets import PennTreebank
 from tqdm import tqdm
 from torch.distributions.multivariate_normal import MultivariateNormal
 from scipy.special import logsumexp
 import numpy as np
-
-parser = argparse.ArgumentParser(description='Sentence VAE')
-parser.add_argument('--batch_size', type=int, default=64, metavar='N',
-                    help='input batch size for training (default: 128)')
-parser.add_argument('--epochs', type=int, default=20, metavar='N',
-                    help='number of epochs to train (default: 10)')
-parser.add_argument('--no-cuda', action='store_true', default=False,
-                    help='enables CUDA training')
-parser.add_argument('--seed', type=int, default=1, metavar='S',
-                    help='random seed (default: 1)')
-parser.add_argument('--train', type=str, default='data/23.auto.clean',  #default='data/02-21.10way.clean',
-                    help='file path of the training data')
-parser.add_argument('--valid', type=str, default='data/22.auto.clean',
-                    help='file path of the validation data')
-parser.add_argument('--test', type=str, default='data/23.auto.clean',
-                    help='file path of the test data')
-parser.add_argument('--rnn', type=str, default='GRU', metavar='N',
-                    choices=['GRU', 'LSTM'],
-                    help='type of RNN (default: GRU)')
-parser.add_argument('--nlayers', type=int, default=1, metavar='N',
-                    help='number of RNN layers (default: 1)')
-parser.add_argument('--bidir', action='store_true', default=True,
-                    help='enables RNN bidirectionality')
-parser.add_argument('--edim', type=int, default=353, metavar='N',
-                    help='embedding dimensions (default: 353)')
-parser.add_argument('--hdim', type=int, default=191, metavar='N',
-                    help='hidden RNN dimensions (default: 191)')
-parser.add_argument('--zdim', type=int, default=13, metavar='N',
-                    help='number of latent codes (default: 13)')
-parser.add_argument('--word_dropout', type=float, default=0.4,
-                    help='dropout probability for an input token (default: 0.4)')
-parser.add_argument('--isamples', type=int, default=5, metavar='N',
-                    help='number of importance samples (default: 5)')
-
-args = parser.parse_args()
-
-args.cuda = not args.no_cuda and torch.cuda.is_available()
-device = torch.device("cuda" if args.cuda else "cpu")
-torch.manual_seed(args.seed)
 
 
 EOS = '[EOS]'
@@ -70,68 +33,50 @@ def batches(l, n):
         yield l[i:i + n]
 
 
-class Split(object):
-    def __init__(self, sentences, w2i, n=None):
-        self.sentences = sentences
-        self.w2i = w2i
-        self.V = len(w2i)
-        if n is None:
-            self.length = len(sentences)
-        else:
-            self.length = n
+def initialize(config):
+    print('Corpus initialization...')
 
-    def data(self, batch_size):
-        for batch in batches(self.sentences, batch_size):
-            input_batch = [torch.tensor([self.w2i[token] for token in sentence[:-1]]) for sentence in batch]
-            target_batch = [torch.tensor([self.w2i[token] for token in sentence[1:]]) for sentence in batch]
-            input_batch = pad_sequence(input_batch)
-            target_batch = pad_sequence(target_batch)
-            # onehot = torch.Tensor(torch.zeros(batch.size(0), self.V).scatter_(1, batch, 1.), type=torch.LongTensor)
-            yield input_batch, target_batch
+    # device = torch.device(config['device'])
+    torch.manual_seed(config['seed'])
 
-    def __len__(self):
-        return self.length
+    field = Field(batch_first=True, tokenize=lambda s: [BOS] + s.split(' ') + [EOS])
+    train_corpus = PennTreebank(config['train_path'], field)
+    valid_corpus = PennTreebank(config['valid_path'], field)
+    test_corpus = PennTreebank(config['test_path'], field)
 
+    field.build_vocab(train_corpus, valid_corpus, test_corpus)
 
-class Corpus(object):
-    def __init__(self, train_path, validation_path, test_path):
-        counter = Counter()
-        train_sentences, train_len, counter = self.load(train_path, counter)
-        valid_sentences, valid_len, counter = self.load(validation_path, counter)
-        test_sentences, test_len, counter = self.load(test_path, counter)
+    train_iterator = BPTTIterator(train_corpus,
+                            config['batch_size'],
+                            config['bptt_len'],
+                            device=config['device'],
+                            repeat=False)
 
-        self.vocab = [UNK, EOS, BOS] + [w for (w, freq) in counter.most_common()]
-        self.w2i = {w: i for (i, w) in enumerate(self.vocab)}
-        self.i2w = {i: w for (w, i) in self.w2i.items()}
+    valid_iterator = BPTTIterator(valid_corpus,
+                                  config['batch_size'],
+                                  config['bptt_len'],
+                                  device=config['device'],
+                                  repeat=False)
 
-        self.training = Split(train_sentences, self.w2i, train_len)
-        self.test = Split(test_sentences, self.w2i, test_len)
-        self.validation = Split(valid_sentences, self.w2i, valid_len)
+    test_iterator = BPTTIterator(test_corpus,
+                                  1,
+                                  config['bptt_len'],
+                                  device=config['device'],
+                                  repeat=False)
 
-    def load(self, path, counter=None):
-        if counter is None:
-            counter = Counter()
+    vocab = field.vocab
 
-        print(f'Reading corpus: {path}')
-        sentences, len = [], 0
-        with open(path, 'r') as f:
-            for line in f.readlines():
-                tree = Tree.fromstring(line)
-                sentence = tree.leaves()
-                counter += Counter(sentence)
-                sentence = [BOS] + sentence + [EOS]
-                sentences.append(sentence)
-                len += 1
-        print(f'Done. {len} sentences.')
-        # print(f'Most frequent words: {counter.most_common(10)}\n')
+    model = VAE(config['batch_size'],
+                rnn_type=config['rnn_type'],
+                nlayers=config['num_layers'],
+                bidirectional=config['bidir'],
+                edim=config['input_emb_dim'],
+                hdim=config['hidden_dim'],
+                zdim=config['latent_dim'],
+                vocab_len=len(vocab),
+                word_dropout_prob=config['word_dropout_prob'])
 
-        return sentences, len, counter
-
-    def tokens_to_ids(self, seq):
-        return [self.w2i[w] for w in seq]
-
-    def ids_to_tokens(self, seq):
-        return [self.i2w[i] for i in seq]
+    return model, vocab, train_iterator, valid_iterator, test_iterator
 
 
 class Annealing(object):
@@ -155,44 +100,64 @@ class Annealing(object):
 
 
 class RNNEncoder(nn.Module):
-    def __init__(self, rnn_type, nlayers, bidirectional, edim, hdim, zdim, vocab):
+    def __init__(self, rnn_type, nlayers, bidirectional, edim, hdim, zdim, vocab_len, batch_size):
         super(RNNEncoder, self).__init__()
-        self.V = len(vocab)
+        self.V = vocab_len
+        self.batch_size = batch_size
+        self.nlayers = nlayers + int(bidirectional) * nlayers
+        self.hdim = hdim
 
         if rnn_type in ['LSTM', 'GRU']:
-            self.rnn = getattr(nn, rnn_type)(edim, hdim, nlayers, bidirectional=bidirectional)
+            self.rnn = getattr(nn, rnn_type)(edim, hdim, nlayers, bidirectional=bidirectional, batch_first=True)
         else:
             raise ValueError("""An invalid option for `--model` was supplied,
                                 options are ['LSTM', 'GRU']""")
 
-        if bidirectional:
-            packed_hdim = 2 * hdim
-        else:
-            packed_hdim = hdim
 
         self.embed = nn.Embedding(self.V, edim, padding_idx=0)
-        self.encode = nn.Linear(packed_hdim, zdim)
+        self.encode = nn.Linear(hdim + int(bidirectional) * hdim, zdim)
         self.init_weights()
+        self.reset_hidden()
 
     def init_weights(self):
         initrange = 0.1
         self.embed.weight.data.uniform_(-initrange, initrange)
+        self.encode.bias.data.fill_(0)
+        self.encode.weight.data.uniform_(-initrange, initrange)
 
-    def forward(self, input, hidden):
-        output, hidden = self.rnn(self.embed(input), hidden)
-        output = output[-1, :, :]
-        return self.encode(output)
+    def forward(self, input, lengths=None, hidden=None):
+        embed_sequence = self.embed(input)
+
+        if lengths is not None:
+            embed_sequence = pack_padded_sequence(embed_sequence,
+                                           lengths=lengths,
+                                           batch_first=True)
+        if hidden is None:
+            hidden = self.hidden
+
+        output, hidden = self.rnn(embed_sequence, hidden)
+        final_h = output[:, -1, :]
+
+        if lengths is not None:
+            final_h = pad_packed_sequence(final_h, batch_first=True)[0]
+
+        return self.encode(final_h)
+
+    def reset_hidden(self, bsz=None):
+        if bsz is None:
+            bsz = self.batch_size
+        self.hidden = torch.zeros(self.nlayers, bsz, self.hdim)
 
 
 class RNNDecoder(nn.Module):
-    def __init__(self, rnn_type, nlayers, bidirectional, edim, hdim, zdim, vocab):
+    def __init__(self, rnn_type, nlayers, bidirectional, edim, hdim, zdim, vocab_len):
         super(RNNDecoder, self).__init__()
 
-        self.V = len(vocab)
+        self.V = vocab_len
         self.hdim = hdim
 
         if rnn_type in ['LSTM', 'GRU']:
-            self.rnn = getattr(nn, rnn_type)(edim, hdim, nlayers, bidirectional=bidirectional)
+            self.rnn = getattr(nn, rnn_type)(edim, hdim, nlayers, bidirectional=bidirectional, batch_first=True)
         else:
             raise ValueError("""An invalid option for `--model` was supplied,
                                 options are ['LSTM', 'GRU']""")
@@ -210,20 +175,24 @@ class RNNDecoder(nn.Module):
     def init_weights(self):
         initrange = 0.1
         self.embed.weight.data.uniform_(-initrange, initrange)
+        self.decode.bias.data.fill_(0)
+        self.decode.weight.data.uniform_(-initrange, initrange)
+        self.tovocab.bias.data.fill_(0)
+        self.tovocab.weight.data.uniform_(-initrange, initrange)
 
     def forward(self, input, z):
-        h0 = self.decode(z).view(-1, input.size(1), self.hdim)
+        h0 = self.decode(z).view(-1, input.size(0), self.hdim)
         output, _ = self.rnn(self.embed(input), h0)
         log_p = F.log_softmax(self.tovocab(output), dim=-1)
         return log_p
 
 
 class VAE(nn.Module):
-    def __init__(self, batch_size, rnn_type, nlayers, bidirectional, edim, hdim, zdim, vocab, word_dropout_prob=0.):
+    def __init__(self, batch_size, rnn_type, nlayers, bidirectional, edim, hdim, zdim, vocab_len, word_dropout_prob=0.):
         super(VAE, self).__init__()
 
-        self.encoder = RNNEncoder(rnn_type, nlayers, bidirectional, edim, hdim, zdim, vocab)
-        self.decoder = RNNDecoder(rnn_type, nlayers, bidirectional, edim, hdim, zdim, vocab)
+        self.encoder = RNNEncoder(rnn_type, nlayers, bidirectional, edim, hdim, zdim, vocab_len, batch_size)
+        self.decoder = RNNDecoder(rnn_type, nlayers, bidirectional, edim, hdim, zdim, vocab_len)
         self.project_loc = nn.Linear(zdim, zdim)
         self.project_scale = nn.Linear(zdim, zdim)
 
@@ -232,13 +201,8 @@ class VAE(nn.Module):
         self.bidirectional = bidirectional
         self.hdim = hdim
         self.dropout_prob = word_dropout_prob
-        self.hidden = torch.Tensor(torch.zeros(self.nlayers + int(self.bidirectional) * self.nlayers,
-                                               batch_size,
-                                               self.hdim))
 
     def encode(self, input, hidden=None):
-        if hidden is None:
-            hidden = self.hidden
         h = self.encoder(input, hidden)
         return self.project_loc(h), F.softplus(self.project_scale(h))
 
@@ -289,8 +253,11 @@ def approximate_sentence_NLL(model, loc, scale, sent, target, nsamples=16):
     """
         NLL with Importance Sampling
     """
-    encoder_distribution = MultivariateNormal(loc, torch.diag((scale ** 2).squeeze(0)))
-    prior_distribution = MultivariateNormal(torch.tensor([0.] * loc.size(-1)), torch.eye(loc.size(-1)))
+    zdim = loc.size(1)
+    loc = loc.squeeze(0)
+    var = (scale ** 2).squeeze(0)
+    encoder_distribution = MultivariateNormal(loc, torch.diag(var))
+    prior_distribution = MultivariateNormal(torch.zeros(zdim), torch.eye(zdim))
 
     NLL = torch.nn.NLLLoss(ignore_index=0, reduction='sum')
     samples = []
@@ -299,129 +266,139 @@ def approximate_sentence_NLL(model, loc, scale, sent, target, nsamples=16):
         log_q_z_x = encoder_distribution.log_prob(z)           # the probablity of z under the encoder distribution
         log_p_z = prior_distribution.log_prob(z)               # the probability of z under a gaussian prior
         logp = model.decode(sent, z)
-        log_p_x_z = - NLL(logp.squeeze(1), target.squeeze(1))  # the sentence probability given the latent variable
+        log_p_x_z = - NLL(logp.permute(0, 2, 1), target)  # the sentence probability given the latent variable
 
         samples.append(log_p_x_z.item() + log_p_z.item() - log_q_z_x.item())
     return np.log(nsamples) - logsumexp(samples)
 
 
-def train(model, optimizer, train_split, batch_size, epoch):
-    model.train()
-    train_loss = 0
-    wpa = 0
-    n_batches = 0
+def train(model, train_data, valid_data):
     annealing = Annealing('linear', 2000)
-    for batch_idx, (data, target) in enumerate(tqdm(train_split.data(batch_size), total=len(train_split) // batch_size)):
+    optimizer = optim.Adam(model.parameters(), lr=config['learning_rate'])
 
-        n_batches += 1
-        data = data.to(device)
-        target = target.to(device)
-        optimizer.zero_grad()
-        log_p, loc, scale = model(data)
+    if config.get('checkpoint', None) is not None:
+        checkpoint = torch.load(config['checkpoint'])
+        model.load_state_dict(checkpoint['model_state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        epoch = checkpoint['epoch']
+        losses = checkpoint['losses']
+    else:
+        epoch = 0
+        losses = []
+        wpas = []
 
-        loss = loss_function(log_p,
-                             target,
-                             loc,
-                             scale,
-                             annealing)
-        loss.backward()
-        train_loss += loss.item()
-        optimizer.step()
-        wpa += word_prediction_accuracy(log_p, target)
+    results_dir = config.get('results_dir', str(datetime.datetime.now()).replace(' ', '_')[5:16])
+    os.mkdir(os.path.join('pickles', results_dir))
+    print('Saving results to:', results_dir)
 
-    train_loss /= len(train_split)
-    wpa /= n_batches
-    print('====> Epoch: {} Average training loss: {:.4f}  WPA: {:.4f}'.format(epoch, train_loss, wpa))
-    return train_loss, wpa
+    print('Starting training!')
+    for epoch in tqdm(range(epoch + 1, epoch + config['epochs'] + 1)):
+        for i, batch in enumerate(tqdm(train_data)):
+            model.train()
+            model.encoder.reset_hidden()
+            optimizer.zero_grad()
 
+            text, target = batch.text.t(), batch.target.t()
+            log_p, loc, scale = model(text)
 
-def validate(model, valid_split, batch_size, epoch):
-    model.eval()
-    valid_loss = 0
-    wpa = 0
-    n_batches = 0
-    with torch.no_grad():
-        for batch_idx, (data, target) in enumerate(valid_split.data(batch_size)):
-            n_batches += 1
-            data = data.to(device)
-            target = target.to(device)
-
-            log_p, loc, scale = model(data)
             loss = loss_function(log_p,
                                  target,
                                  loc,
-                                 scale)
-            valid_loss += loss.item()
-            wpa += word_prediction_accuracy(log_p, target)
+                                 scale,
+                                 annealing)
+            loss.backward()
+            optimizer.step()
 
-    valid_loss /= len(valid_split)
-    wpa /= n_batches
-    print('====> Epoch: {} Average validation loss: {:.4f}  WPA: {:.4f}'.format(epoch, valid_loss, wpa))
-    return valid_loss, wpa
+            losses.append(loss.item())
+            wpas.append(word_prediction_accuracy(log_p, target))
+
+            # if i > 0 and i % config['sample_every'] == 0:
+                # sample(model, vocab, greedy=True)
+                # sample(model, vocab, greedy=False, temp=config['temperature'])
+                # perplexity('data/val_lines.txt', model, vocab)
 
 
-def test(model, test_split, nsamples=16):
+        print('\n====> Epoch: {} Average training loss: {:.4f}  Average WPA: {:.4f}'.format(epoch,
+                                                                                          np.mean(losses),
+                                                                                          np.mean(wpas)))
+
+        valid_losses, valid_wpas = validate(model, valid_data)
+        print('\n====> Epoch: {} Average validation loss: {:.4f}  Average WPA: {:.4f}'.format(epoch,
+                                                                                            np.mean(valid_losses),
+                                                                                            np.mean(valid_wpas)))
+
+        torch.save({
+            'epoch': epoch,
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'losses': losses,
+            'valid_losses': valid_losses,
+            'wpas': wpas,
+            'valid_wpas': valid_wpas
+        }, f'pickles/{results_dir}/state_dict_e{epoch}.pt')
+
+    return
+
+
+def validate(model, valid_data):
     model.eval()
-    test_loss = 0
-    wpa = 0
+    losses = []
+    wpas = []
     with torch.no_grad():
-        for (data, target) in test_split.data(1):
-            data = data.to(device)
-            target = target.to(device)
-            logp, loc, scale = model(data)
-            test_loss += approximate_sentence_NLL(model, loc, scale, data, target, nsamples)
-            wpa += word_prediction_accuracy(logp, target)
-
-    test_loss /= len(test_split)
-    wpa /= len(test_split)
-    print('====> Test set loss: {:.4f}WPA: {:.4f}'.format(test_loss, wpa))
-    return test_loss, wpa
-
-
-if __name__ == "__main__":
-
-    corpus = Corpus(args.train, args.valid, args.test)
-    print('Vocabulary size:', len(corpus.vocab))
-
-    model = VAE(args.batch_size,
-                rnn_type=args.rnn,
-                nlayers=args.nlayers,
-                bidirectional=args.bidir,
-                edim=args.edim,
-                hdim=args.hdim,
-                zdim=args.zdim,
-                vocab=corpus.vocab,
-                word_dropout_prob=args.word_dropout)
-
-    model.to(device)
-    optimizer = optim.Adam(model.parameters(), lr=1e-3)
-
-    train_stats = []
-    valid_stats = []
-
-    for epoch in range(1, args.epochs + 1):
-        train_loss, train_wpa = train(model, optimizer, corpus.training, args.batch_size, epoch)
-        valid_loss, valid_wpa = validate(model, corpus.validation, args.batch_size, epoch)
-
-        train_stats.append((train_loss, train_wpa))
-        valid_stats.append((valid_loss, valid_wpa))
-        test(model, corpus.test, nsamples=args.isamples)
+        print('Starting validation!')
+        for i, batch in enumerate(tqdm(valid_data)):
+            text, target = batch.text.t(), batch.target.t()
+            log_p, loc, scale = model(text)
+            loss = loss_function(log_p,
+                                 target,
+                                 loc,
+                                 scale,
+                                 annealing=None)
+            losses.append(loss.item())
+            wpas.append(word_prediction_accuracy(log_p, target))
+    return losses, wpas
 
 
-##########################################################################################
-# self.eos = self.embed(torch.tensor(batch_size * [self.w2i['[EOS]']]))
-#
-# seq = []
-# log_p = []
-# for i in range(len):
-#     # print()
-#     # print('!!!!', self.eos.view(1, batch_size, -1).shape)
-#     # print()
-#     output, hidden = self.rnn(input,
-#                               hidden)
-#     log_p_output = F.log_softmax(self.tovocab(output))
-#     next_token_id = torch.argmax(log_p_output, dim=-1)
-#     input = self.embed(next_token_id)
-#     log_p.append(log_p_output)
-#     seq.append(next_token_id)
-# return torch.stack(log_p), torch.stack(seq)
+def test(model, test_data, nsamples=16):
+    model.eval()
+    losses = []
+    wpas = []
+    model.encoder.reset_hidden(bsz=1)
+    with torch.no_grad():
+        print('Starting test!')
+        for i, batch in enumerate(tqdm(test_data)):
+            text, target = batch.text.t(), batch.target.t()
+            log_p, loc, scale = model(text)
+            losses.append(approximate_sentence_NLL(model, loc, scale, text, target, nsamples))
+            wpas.append(word_prediction_accuracy(log_p, target))
+
+    print('\n====> Average test set loss: {:.4f}   Average WPA: {:.4f}'.format(np.mean(losses), np.mean(wpas)))
+    return losses, wpas
+
+
+
+if __name__ == '__main__':
+    config = {
+        'train_path': 'data/02-21.10way.clean',
+        'valid_path': 'data/22.auto.clean',
+        'test_path': 'data/23.auto.clean',
+        'batch_size': 64,
+        'bptt_len': 40,
+        # 'checkpoint': 'pickles/05-23_00:54/state_dict_e1.pt',
+        'rnn_type': 'GRU',
+        'device': 'cuda' if torch.cuda.is_available() else 'cpu',
+        'epochs': 1,
+        'learning_rate': 1e-3,
+        'hidden_dim': 191,
+        'input_emb_dim': 353,
+        'latent_dim': 13,
+        'num_layers': 1,
+        'bidir': True,
+        'word_dropout_prob': 0.4,
+        'importance_samples': 5,
+        'seed': 0
+    }
+
+    model, vocab, train_iterator, valid_iterator, test_iterator = initialize(config)
+    train(model, train_iterator, valid_iterator)
+    test(model, test_iterator, config['importance_samples'])
