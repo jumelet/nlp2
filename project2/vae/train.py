@@ -58,13 +58,13 @@ def loss_function(logp, target, loc, scale, annealing=None):
     return nll_loss + kl_loss
 
 
-def approximate_sentence_NLL(model, loc, scale, sent, target, nsamples=16):
+def approximate_sentence_NLL(model, loc, scale, sent, target, device, nsamples=16):
     """
         NLL with Importance Sampling
     """
     zdim = loc.size(1)
-    loc = loc.squeeze(0)
-    var = (scale ** 2).squeeze(0)
+    loc = loc.squeeze(0).to(device)
+    var = (scale ** 2).squeeze(0).to(device)
     encoder_distribution = MultivariateNormal(loc, torch.diag(var))
     prior_distribution = MultivariateNormal(torch.zeros(zdim), torch.eye(zdim))
 
@@ -150,7 +150,7 @@ def train(config, model, train_data, valid_data):
 
     lowest_epoch_loss = (float('inf'), 0)
     print('Starting training!')
-    for epoch in tqdm(range(epoch + 1, epoch + config['epochs'] + 1)):
+    for epoch in range(epoch + 1, epoch + config['epochs'] + 1):
         epoch_losses = []
         epoch_wpas = []
         for i, batch in enumerate(train_data):
@@ -247,7 +247,7 @@ def test(config, model, test_data):
         for i, batch in enumerate(test_data):
             text, target = batch.text.t(), batch.target.t()
             log_p, loc, scale = model(text)
-            losses.append(approximate_sentence_NLL(model, loc, scale, text, target, nsamples))
+            losses.append(approximate_sentence_NLL(model, loc, scale, text, target, config['device'], nsamples).item())
             wpas.append(word_prediction_accuracy(log_p, target).item())
 
     print('\n====> Average test set loss: {:.4f}   Average WPA: {:.4f}'.format(np.mean(losses), np.mean(wpas)))
