@@ -164,7 +164,7 @@ def validate(config, model, valid_data):
         text, target = item.text.t(), item.target.t()
         with torch.no_grad():
             log_p, loc, scale = model(text)
-            nll = approximate_sentence_NLL(model, loc, scale, text, target, config['device'], config['isamples'])
+            nll = approximate_sentence_NLL(model, loc, scale, text, target, config['device'], config['importance_samples'])
             wpa = word_prediction_accuracy(model, loc, text, target, config['device'])
             elbo = multi_sample_elbo(loc, scale, nll)
         nlls.append(nll.item())
