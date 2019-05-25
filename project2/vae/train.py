@@ -122,7 +122,7 @@ def initialize(config):
                 zdim=config['latent_dim'],
                 vocab_len=len(vocab),
                 word_dropout_prob=config['word_dropout_prob'],
-                device=device)
+                device=device).to(device)
 
     return model, vocab, train_iterator, valid_iterator, test_iterator
 

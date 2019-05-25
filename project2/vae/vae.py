@@ -109,7 +109,7 @@ class SentenceVAE(nn.Module):
         self.decoder = RNNDecoder(rnn_type, nlayers, bidirectional, edim, hdim, zdim, vocab_len, device)
         self.project_loc = nn.Linear(zdim, zdim).to(device)
         self.project_scale = nn.Linear(zdim, zdim).to(device)
-
+        self.device = device
         self.dropout_prob = word_dropout_prob
 
     def encode(self, input, hidden=None):
@@ -118,7 +118,7 @@ class SentenceVAE(nn.Module):
 
     def reparametrize(self, loc, scale):
         std = torch.exp(0.5 * scale)
-        eps = torch.randn_like(std)
+        eps = torch.randn_like(std, device=self.device)
         return loc + eps * std  # z
 
     def decode(self, input, z):
