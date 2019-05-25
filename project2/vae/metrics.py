@@ -57,7 +57,8 @@ def perplexity(config, NLLs):
 
     :return: Validation or test set perplexity, derived from the negative log-likelihood
     """
-    return np.exp(np.sum(NLLs) / config['bptt_len'] * len(NLLs))
+    log_ppl = np.sum(NLLs) / (config['bptt_len'] * len(NLLs))
+    return np.exp(log_ppl)
 
 
 def multi_sample_elbo(loc, scale, approximate_nll):

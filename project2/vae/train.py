@@ -149,7 +149,7 @@ def train(config, model, train_data, valid_data):
     return
 
 
-def validate(config, model, valid_data):
+def validate(config, model, valid_data, phase='validation'):
     """
     :return: (approximate NLL, validation perplexity, multi-sample elbo, word prediction accuracy)
     """
@@ -159,7 +159,7 @@ def validate(config, model, valid_data):
     wpas = []
     elbos = []
 
-    print('Starting validation!')
+    print('Starting {}!'.format(phase))
     for item in valid_data:
         text, target = item.text.t(), item.target.t()
         with torch.no_grad():
@@ -175,5 +175,5 @@ def validate(config, model, valid_data):
 
 
 def test(config, model, test_data):
-    nll, ppl, elbo, wpa = validate(config, model, test_data)
+    nll, ppl, elbo, wpa = validate(config, model, test_data, phase='test')
     return nll, ppl, elbo, wpa
