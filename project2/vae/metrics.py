@@ -90,6 +90,5 @@ def approximate_sentence_NLL(model, loc, scale, sent, target, device, nsamples=1
         log_p_z = prior_distribution.log_prob(z)          # the probability of z under a gaussian prior
         logp = model.decode(sent, z)                      # the log-softmax word probabilities
         log_p_x_z = - NLL(logp.permute(0, 2, 1), target)  # the sentence probability given the latent variable
-
         samples.append(log_p_x_z.item() + log_p_z.item() - log_q_z_x.item())
     return np.log(nsamples) - logsumexp(samples)

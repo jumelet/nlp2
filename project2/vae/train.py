@@ -9,7 +9,7 @@ from torchtext.datasets import PennTreebank
 import numpy as np
 
 from vae.vae import SentenceVAE
-from vae.metrics import approximate_sentence_NLL, multi_sample_elbo, perplexity, word_prediction_accuracy
+from vae.metrics import Annealing, approximate_sentence_NLL, elbo_loss, multi_sample_elbo, perplexity, word_prediction_accuracy
 
 
 EOS = '[EOS]'
