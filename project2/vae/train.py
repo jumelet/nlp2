@@ -1,6 +1,8 @@
 from __future__ import print_function
 import datetime
 import os
+
+import nltk
 import torch
 import torch.utils.data
 from torch import optim
@@ -17,13 +19,17 @@ BOS = '[BOS]'
 UNK = '[UNK]'
 
 
+def tokenize(s):
+    return [BOS] + nltk.Tree.fromstring(s).leaves() + [EOS]
+
+
 def initialize(config):
     print('Corpus initialization...')
     
     device = torch.device(config['device'])
     torch.manual_seed(config['seed'])
 
-    field = Field(batch_first=True, tokenize=lambda s: [BOS] + s.split(' ') + [EOS])
+    field = Field(batch_first=True, tokenize=tokenize)
     train_corpus = PennTreebank(config['train_path'], field)
     valid_corpus = PennTreebank(config['valid_path'], field)
     test_corpus = PennTreebank(config['test_path'], field)
