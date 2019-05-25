@@ -71,7 +71,7 @@ def approximate_sentence_NLL(model, loc, scale, sent, target, device, nsamples=1
     NLL = torch.nn.NLLLoss(ignore_index=0, reduction='sum')
     samples = []
     for s in range(nsamples):
-        z = encoder_distribution.sample((1,))                  # sampling a z
+        z = encoder_distribution.sample((1,)).to(device)                  # sampling a z
         log_q_z_x = encoder_distribution.log_prob(z)           # the probablity of z under the encoder distribution
         log_p_z = prior_distribution.log_prob(z)               # the probability of z under a gaussian prior
         logp = model.decode(sent, z)
@@ -122,7 +122,7 @@ def initialize(config):
                 zdim=config['latent_dim'],
                 vocab_len=len(vocab),
                 word_dropout_prob=config['word_dropout_prob'],
-                device=device).to(device)
+                device=device)
 
     return model, vocab, train_iterator, valid_iterator, test_iterator
 
