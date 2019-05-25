@@ -109,7 +109,7 @@ class SentenceVAE(nn.Module):
         self.decoder = RNNDecoder(rnn_type, nlayers, bidirectional, edim, hdim, zdim, vocab_len, device)
         self.project_loc = nn.Linear(zdim, zdim).to(device)
         self.project_scale = nn.Linear(zdim, zdim).to(device)
-
+        self.device = device
         self.dropout_prob = word_dropout_prob
 
     def encode(self, input, hidden=None):
@@ -124,9 +124,7 @@ class SentenceVAE(nn.Module):
     def decode(self, input, z):
         # randomly replace decoder input with <unk>
         if self.dropout_prob > 0:
-            mask = torch.rand(input.size())
-            if torch.cuda.is_available():
-                mask = mask.cuda()
+            mask = torch.rand(input.size(), device=self.device)
             mask[mask < self.dropout_prob] = 0
             mask[mask >= self.dropout_prob] = 1
             mask[0, :] = 1  # always keep begin of sentence
