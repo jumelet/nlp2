@@ -66,12 +66,12 @@ def approximate_sentence_NLL(model, loc, scale, sent, target, device, nsamples=1
     loc = loc.squeeze(0).to(device)
     var = (scale ** 2).squeeze(0).to(device)
     encoder_distribution = MultivariateNormal(loc, torch.diag(var))
-    prior_distribution = MultivariateNormal(torch.zeros(zdim), torch.eye(zdim))
+    prior_distribution = MultivariateNormal(torch.zeros(zdim).to(device), torch.eye(zdim).to(device))
 
     NLL = torch.nn.NLLLoss(ignore_index=0, reduction='sum')
     samples = []
     for s in range(nsamples):
-        z = encoder_distribution.sample((1,)).to(device)                  # sampling a z
+        z = encoder_distribution.sample((1,))              # sampling a z
         log_q_z_x = encoder_distribution.log_prob(z)           # the probablity of z under the encoder distribution
         log_p_z = prior_distribution.log_prob(z)               # the probability of z under a gaussian prior
         logp = model.decode(sent, z)
