@@ -47,8 +47,7 @@ def word_prediction_accuracy(model, loc, input, target, device):
     """
     loc = loc.squeeze(0).to(device)
     logp = model.decode(input, loc)
-    print(logp.shape, 'logp.shape')
-    return torch.mean(torch.eq(torch.argmax(logp, dim=1), target).float())
+    return torch.mean(torch.eq(torch.argmax(logp, dim=-1), target).float())
 
 
 def perplexity(config, NLLs):
