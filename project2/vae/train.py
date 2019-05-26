@@ -11,7 +11,7 @@ from torchtext.datasets import PennTreebank
 import numpy as np
 
 from vae.vae import SentenceVAE
-from vae.metrics import Annealing, approximate_sentence_NLL, elbo_loss, multi_sample_elbo, perplexity_, word_prediction_accuracy
+from vae.metrics import Annealing, approximate_sentence_NLL, elbo_loss, multi_sample_elbo, word_prediction_accuracy
 
 
 EOS = '<eos>'
@@ -158,7 +158,7 @@ def train(config, model, train_data, valid_data, vocab):
     return
 
 
-def validate(config, model, valid_data, vocab, phase='validation', verbose=True):
+def validate(config, model, iterator, vocab, phase='validation', verbose=True):
     """
     :return: (approximate NLL, validation perplexity, multi-sample elbo, word prediction accuracy)
     """
@@ -170,8 +170,9 @@ def validate(config, model, valid_data, vocab, phase='validation', verbose=True)
     nlls = []
     wpas = []
     elbos = []
+    ppl = 0.
     print('Starting {}!'.format(phase))
-    for item in valid_data:
+    for item in iterator:
         tokens = item.text.t()
         text = torch.cat((bos_for_item, tokens), dim=1)
         target = torch.cat((tokens, eos_for_item), dim=1)
@@ -180,18 +181,16 @@ def validate(config, model, valid_data, vocab, phase='validation', verbose=True)
             nll = approximate_sentence_NLL(model, loc, scale, text, target, config['device'], config['importance_samples'])
             wpa = word_prediction_accuracy(model, loc, text, target, config['device'])
             elbo = multi_sample_elbo(loc, scale, nll)
+            ppl += np.exp((nll / len(text)))
         nlls.append(nll.item())
         wpas.append(wpa.item())
         elbos.append(elbo.item())
 
-    ppl_path = config['valid_path'] if phase == 'validation' else config['test_path']
-    avg_ppl = perplexity_(config, model, ppl_path, vocab)
-
     if verbose:
         print('\n====> {}: NLL: {:.4f}  PPL: {:.4f}  ELBO: {:.4f}  WPA: {:.4f}'.format(
-            phase, np.mean(nlls), avg_ppl, np.mean(elbos), np.mean(wpas))
+            phase, np.mean(nlls), ppl, np.mean(elbos), np.mean(wpas))
         )
-    return np.mean(nlls), avg_ppl, np.mean(elbos), np.mean(wpas)
+    return np.mean(nlls), ppl, np.mean(elbos), np.mean(wpas)
 
 
 def test(config, model, test_data, vocab):
