@@ -164,8 +164,8 @@ def validate(config, model, valid_data, vocab, phase='validation', verbose=True)
     """
     model.eval()
     model.encoder.reset_hidden(bsz=1)
-    bos_for_item = torch.LongTensor([vocab.stoi[BOS]], device=config['device']).view(1, 1)
-    eos_for_item = torch.LongTensor([vocab.stoi[EOS]], device=config['device']).view(1, 1)
+    bos_for_item = torch.LongTensor([vocab.stoi[BOS]]).view(1, 1).to(config['device'])
+    eos_for_item = torch.LongTensor([vocab.stoi[EOS]]).view(1, 1).to(config['device'])
 
     nlls = []
     wpas = []
