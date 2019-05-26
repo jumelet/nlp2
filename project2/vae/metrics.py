@@ -73,7 +73,7 @@ def perplexity_(config, model, path, vocab):
     model.eval()
     ppl = 0.
     for line in lines:
-        tokens = torch.LongTensor([vocab.stoi[w] for w in line])
+        tokens = torch.LongTensor([vocab.stoi[w] for w in line]).to(config['device'])
         text = tokens[:-1].view(1, -1)
         target = tokens[1:].view(1, -1)
         with torch.no_grad():
