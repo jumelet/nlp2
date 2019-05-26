@@ -91,8 +91,8 @@ def train(config, model, train_data, valid_data, vocab):
     print('Saving results to:', results_dir)
 
     best_epoch = (float('inf'), 0)
-    bos_for_batch = torch.LongTensor([vocab.stoi[BOS]]).repeat(config['batch_size'], 1)
-    eos_for_batch = torch.LongTensor([vocab.stoi[EOS]]).repeat(config['batch_size'], 1)
+    bos_for_batch = torch.LongTensor([vocab.stoi[BOS]], device=config['device']).repeat(config['batch_size'], 1)
+    eos_for_batch = torch.LongTensor([vocab.stoi[EOS]], device=config['device']).repeat(config['batch_size'], 1)
 
     print('Starting training!')
     for epoch in range(starting_epoch + 1, starting_epoch + config['epochs'] + 1):
@@ -166,13 +166,17 @@ def validate(config, model, valid_data, vocab, phase='validation'):
     """
     model.eval()
     model.encoder.reset_hidden(bsz=1)
+    bos_for_item = torch.LongTensor([vocab.stoi[BOS]], device=config['device']).view(1, 1)
+    eos_for_item = torch.LongTensor([vocab.stoi[EOS]], device=config['device']).view(1, 1)
+
     nlls = []
     wpas = []
     elbos = []
-
     print('Starting {}!'.format(phase))
     for item in valid_data:
-        text, target = item.text.t(), item.target.t()
+        tokens = item.text.t()
+        text = torch.cat((bos_for_item, tokens), dim=1)
+        target = torch.cat((tokens, eos_for_item), dim=1)
         with torch.no_grad():
             log_p, loc, scale = model(text)
             nll = approximate_sentence_NLL(model, loc, scale, text, target, config['device'], config['importance_samples'])
