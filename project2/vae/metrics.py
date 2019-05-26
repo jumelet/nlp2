@@ -1,7 +1,7 @@
 from __future__ import print_function
 import numpy as np
 import torch
-
+import nltk
 from torch.distributions.multivariate_normal import MultivariateNormal
 from scipy.special import logsumexp
 
@@ -50,15 +50,42 @@ def word_prediction_accuracy(model, loc, input, target, device):
     return torch.mean(torch.eq(torch.argmax(logp, dim=-1), target).float())
 
 
-def perplexity(config, NLLs):
-    """
-    :param config: configurations dictionary
-    :param NLLs: list of approximate sentence NLLs
+# def perplexity(config, NLLs):
+#     """
+#     :param config: configurations dictionary
+#     :param NLLs: list of approximate sentence NLLs
+#
+#     :return: Validation or test set perplexity, derived from the negative log-likelihood
+#     """
+#     log_ppl = np.sum(NLLs) / (config['bptt_len'] * len(NLLs))
+#     return np.exp(log_ppl)
 
-    :return: Validation or test set perplexity, derived from the negative log-likelihood
+
+def perplexity_(config, model, path, vocab):
     """
-    log_ppl = np.sum(NLLs) / (config['bptt_len'] * len(NLLs))
-    return np.exp(log_ppl)
+       :return: (approximate NLL, validation perplexity, multi-sample elbo, word prediction accuracy)
+    """
+    with open(path) as f:
+        lines = [['<bos>'] +
+                 nltk.Tree.fromstring(line).leaves() +
+                 ['<eos>']
+                 for line in f.readlines()]
+    model.eval()
+    ppl = 0.
+    for line in lines:
+        tokens = torch.LongTensor([vocab.stoi[w] for w in line])
+        text = tokens[:-1].view(1, -1)
+        target = tokens[1:].view(1, -1)
+        with torch.no_grad():
+            log_p, loc, scale = model(text)
+            nll = approximate_sentence_NLL(
+                model, loc, scale, text, target, config['device'], config['importance_samples']
+            )
+        sentence_ppl = nll / len(target)
+        ppl += np.exp(sentence_ppl)
+
+    avg_perp = ppl / len(lines)
+    return avg_perp
 
 
 def multi_sample_elbo(loc, scale, approximate_nll):

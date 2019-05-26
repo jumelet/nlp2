@@ -11,16 +11,15 @@ from torchtext.datasets import PennTreebank
 import numpy as np
 
 from vae.vae import SentenceVAE
-from vae.metrics import Annealing, approximate_sentence_NLL, elbo_loss, multi_sample_elbo, perplexity, word_prediction_accuracy
+from vae.metrics import Annealing, approximate_sentence_NLL, elbo_loss, multi_sample_elbo, perplexity_, word_prediction_accuracy
 
 
-EOS = '[EOS]'
-BOS = '[BOS]'
-UNK = '[UNK]'
+EOS = '<eos>'
+BOS = '<bos>'
 
 
 def tokenize(s):
-    return [BOS] + nltk.Tree.fromstring(s).leaves() + [EOS]
+    return nltk.Tree.fromstring(s).leaves()
 
 
 def initialize(config):
@@ -29,12 +28,12 @@ def initialize(config):
     device = torch.device(config['device'])
     torch.manual_seed(config['seed'])
 
-    field = Field(batch_first=True, tokenize=tokenize)
+    field = Field(batch_first=True, tokenize=tokenize, init_token=BOS, eos_token=EOS)
     train_corpus = PennTreebank(config['train_path'], field)
     valid_corpus = PennTreebank(config['valid_path'], field)
     test_corpus = PennTreebank(config['test_path'], field)
 
-    field.build_vocab(train_corpus, valid_corpus, test_corpus)
+    field.build_vocab(train_corpus, valid_corpus, test_corpus, min_freq=1)
     vocab = field.vocab
 
     train_iterator = BPTTIterator(train_corpus,
@@ -69,7 +68,7 @@ def initialize(config):
     return model, vocab, train_iterator, valid_iterator, test_iterator
 
 
-def train(config, model, train_data, valid_data):
+def train(config, model, train_data, valid_data, vocab):
     annealing = Annealing('linear', 2000)
     optimizer = optim.Adam(model.parameters(), lr=config['learning_rate'])
 
@@ -92,6 +91,9 @@ def train(config, model, train_data, valid_data):
     print('Saving results to:', results_dir)
 
     best_epoch = (float('inf'), 0)
+    bos_for_batch = torch.LongTensor([vocab.stoi[BOS]]).repeat(config['batch_size'], 1)
+    eos_for_batch = torch.LongTensor([vocab.stoi[EOS]]).repeat(config['batch_size'], 1)
+
     print('Starting training!')
     for epoch in range(starting_epoch + 1, starting_epoch + config['epochs'] + 1):
         epoch_losses = []
@@ -102,7 +104,10 @@ def train(config, model, train_data, valid_data):
             model.encoder.reset_hidden()
             optimizer.zero_grad()
 
-            text, target = batch.text.t(), batch.target.t()
+            tokens = batch.text.t()
+            text = torch.cat((bos_for_batch, tokens), dim=1)
+            target = torch.cat((tokens, eos_for_batch), dim=1)
+
             log_p, loc, scale = model(text)
 
             loss = elbo_loss(log_p,
@@ -118,7 +123,7 @@ def train(config, model, train_data, valid_data):
         print('\n====> Epoch: {} Average training loss: {:.4f}'.format(epoch, epoch_train_loss))
 
         ## Validation
-        valid_nll, valid_ppl, valid_elbo, valid_wpa = validate(config, model, valid_data)
+        valid_nll, valid_ppl, valid_elbo, valid_wpa = validate(config, model, valid_data, vocab)
         print('\n====> Epoch: {} Validation: NLL: {:.4f}  PPL: {:.4f}  ELBO: {:.4f}  WPA: {:.4f}'.format(epoch,
                                                                                                          valid_nll,
                                                                                                          valid_ppl,
@@ -155,7 +160,7 @@ def train(config, model, train_data, valid_data):
     return
 
 
-def validate(config, model, valid_data, phase='validation'):
+def validate(config, model, valid_data, vocab, phase='validation'):
     """
     :return: (approximate NLL, validation perplexity, multi-sample elbo, word prediction accuracy)
     """
@@ -177,9 +182,12 @@ def validate(config, model, valid_data, phase='validation'):
         wpas.append(wpa.item())
         elbos.append(elbo.item())
 
-    return np.mean(nlls), perplexity(config, nlls), np.mean(elbos), np.mean(wpas)
+    ppl_path = config['valid_path'] if phase == 'validation' else config['test_path']
+    avg_ppl = perplexity_(config, model, ppl_path, vocab)
+
+    return np.mean(nlls), avg_ppl, np.mean(elbos), np.mean(wpas)
 
 
-def test(config, model, test_data):
-    nll, ppl, elbo, wpa = validate(config, model, test_data, phase='test')
+def test(config, model, test_data, vocab):
+    nll, ppl, elbo, wpa = validate(config, model, test_data, vocab, phase='test')
     return nll, ppl, elbo, wpa
