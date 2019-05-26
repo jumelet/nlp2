@@ -12,6 +12,7 @@ class LM(nn.Module):
                  hidden_size: int = 100,
                  lstm_num_layers: int = 2,
                  dropout: float = 0.,
+                 tie_weights: bool = False,
                  device: str = 'cuda:0') -> None:
 
         super(LM, self).__init__()
@@ -20,6 +21,8 @@ class LM(nn.Module):
         self.lstm_num_hidden = hidden_size
         self.batch_size = batch_size
         self.input_emb_dim = input_emb_dim
+
+        self.device = device
 
         rnn = {
             'LSTM': nn.LSTM,
@@ -35,7 +38,11 @@ class LM(nn.Module):
         ).to(device)
 
         self.encoder = nn.Embedding(vocabulary_size, input_emb_dim).to(device)
+        self.dropout = nn.Dropout(dropout)
         self.decoder = nn.Linear(hidden_size, vocabulary_size).to(device)
+
+        if tie_weights:
+            self.decoder.weight = self.encoder.weight
 
         self.hidden = self.init_hidden()
 
@@ -48,7 +55,7 @@ class LM(nn.Module):
         self.decoder.weight.data.uniform_(-initrange, initrange)
 
     def forward(self, input_, lengths=None, hidden=None):
-        encoded = self.encoder(input_)
+        encoded = self.encoder(input_.to(self.device))
 
         if lengths is not None:
             encoded = pack_padded_sequence(encoded,
@@ -64,7 +71,7 @@ class LM(nn.Module):
 
         if lengths is not None:
             final_h = pad_packed_sequence(final_h, batch_first=True)[0]
-        out = self.decoder(final_h)
+        out = self.decoder(self.dropout(final_h))
 
         return out, new_hidden
 

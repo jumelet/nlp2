@@ -43,6 +43,7 @@ def initialize(config):
                                   batch_size=config['batch_size'],
                                   device=config['device'],
                                   repeat=False,
+                                  shuffle=True,
                                   sort=False,
                                   sort_key=lambda x: len(x.text),
                                   sort_within_batch=True,
@@ -56,6 +57,8 @@ def initialize(config):
         hidden_size=config['hidden_size'],
         input_emb_dim=config['input_emb_dim'],
         lstm_num_layers=config['num_layers'],
+        dropout=config['dropout'],
+        tie_weights=config['tie_weights'],
     )
 
     return vocab, iterator, model
@@ -67,6 +70,10 @@ def train(config):
     model.train()
     criterion = torch.nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=config['learning_rate'])
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min',
+                                                     factor=0.9,
+                                                     patience=1,
+                                                     verbose=True)
 
     if config.get('checkpoint', None) is not None:
         checkpoint = torch.load(config['checkpoint'])
@@ -79,7 +86,8 @@ def train(config):
         losses = []
 
     results_dir = config.get('results_dir', str(datetime.datetime.now()).replace(' ', '_')[5:16])
-    os.mkdir(os.path.join('pickles', results_dir))
+    if not os.path.isdir(os.path.join('pickles', results_dir)):
+        os.mkdir(os.path.join('pickles', results_dir))
     print('Saving results to:', results_dir)
 
     print('Starting training!')
@@ -91,34 +99,39 @@ def train(config):
 
             if config.get('bptt_len', None) is None:
                 text, lengths = batch.text
+                bsz = text.shape[0]
                 lengths -= 1
 
                 input_ = text[:, :-1]
+
                 target = pack_padded_sequence(text[:, 1:], lengths=lengths, batch_first=True)[0]
 
-                logits = model(input_, lengths=lengths)[0]
+                logits = model(input_, lengths=lengths, hidden=model.init_hidden(bsz))[0]
                 logits = pack_padded_sequence(logits, lengths=lengths, batch_first=True)[0]
             else:
                 text, target = batch.text.t(), batch.target.view(-1)
-                logits = model(text)[0].view(-1, len(vocab))
+                bsz = text.shape[0]
+                logits = model(text, hidden=model.init_hidden(bsz))[0].view(-1, len(vocab))
 
             loss = criterion(logits, target)
             loss.backward()
 
-            optimizer.step()
-
             losses.append(loss.item())
             if i > 0 and i % config['sample_every'] == 0:
                 print('\n', i, loss.item())
-                sample(model, vocab, greedy=True)
                 sample(model, vocab, greedy=False, temp=config['temperature'])
-                perplexity('data/val_lines.txt', model, vocab)
 
-            break
+                val_pp = perplexity('data/val_lines.txt', model, vocab)
+                scheduler.step(val_pp)
+            else:
+                optimizer.step()
 
-        torch.save({
-            'epoch': epoch,
-            'model_state_dict': model.state_dict(),
-            'optimizer_state_dict': optimizer.state_dict(),
-            'losses': losses,
-        }, f'pickles/{results_dir}/state_dict_e{epoch}.pt')
+        # perplexity('data/val_lines.txt', model, vocab)
+
+        if epoch % config['save_every'] == 0:
+            torch.save({
+                'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'losses': losses,
+            }, f'pickles/{results_dir}/state_dict_e{epoch}.pt')

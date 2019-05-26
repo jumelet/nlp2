@@ -29,7 +29,7 @@ def sample(model, vocab, max_len=20, greedy=True, temp=1.0):
     model.train()
 
 
-def perplexity(path, model, vocab):
+def perplexity(path, model, vocab, device='cpu'):
     with open(path) as f:
         lines = [['<bos>'] + l.strip().split(' ') + ['<eos>'] for l in f.read().strip().split('\n')]
 
@@ -43,10 +43,8 @@ def perplexity(path, model, vocab):
             out, hidden = model(sen[:-1].view(1, -1),
                                 hidden=model.init_hidden(1))
 
-        all_probs = nn.functional.softmax(out[0], dim=1)
-        probs = torch.index_select(all_probs, 1, sen[1:])
-
-        x = probs.prod()
+        all_probs = nn.functional.log_softmax(out[0], dim=1)
+        probs = torch.gather(all_probs, 1, sen[1:].reshape(-1, 1).to(device))
 
         perps += torch.exp(-probs.sum() / len(line[:-1]))
 
@@ -55,3 +53,5 @@ def perplexity(path, model, vocab):
     print(avg_perp)
 
     model.train()
+
+    return avg_perp
