@@ -98,7 +98,7 @@ def train(config, model, train_data, valid_data, vocab):
     for epoch in range(starting_epoch + 1, starting_epoch + config['epochs'] + 1):
         epoch_losses = []
 
-        ## Batch training
+        ## Training (with batches)
         for i, batch in enumerate(train_data):
             model.train()
             model.encoder.reset_hidden()
@@ -124,18 +124,15 @@ def train(config, model, train_data, valid_data, vocab):
 
         ## Validation
         valid_nll, valid_ppl, valid_elbo, valid_wpa = validate(config, model, valid_data, vocab)
-        print('\n====> Epoch: {} Validation: NLL: {:.4f}  PPL: {:.4f}  ELBO: {:.4f}  WPA: {:.4f}'.format(epoch,
-                                                                                                         valid_nll,
-                                                                                                         valid_ppl,
-                                                                                                         valid_elbo,
-                                                                                                         valid_wpa))
 
+        ## Collect training statistics
         train_losses.append(epoch_train_loss)
         valid_nlls.append(valid_nll)
         valid_ppls.append(valid_ppl)
         valid_elbos.append(valid_elbo)
         valid_wpas.append(valid_wpa)
 
+        ## Store model if it's the best so far
         if valid_ppl <= best_epoch[0]:
             pickles_path = '/home/mariog/projects/nlp2/project2/pickles'
             torch.save({
@@ -149,6 +146,7 @@ def train(config, model, train_data, valid_data, vocab):
                 os.remove(old_path)
             best_epoch = (valid_ppl, epoch)
 
+    ## Finally store all learning statistics
     torch.save({
         'train_losses': train_losses,
         'valid_nlls': valid_nlls,
@@ -160,7 +158,7 @@ def train(config, model, train_data, valid_data, vocab):
     return
 
 
-def validate(config, model, valid_data, vocab, phase='validation'):
+def validate(config, model, valid_data, vocab, phase='validation', verbose=True):
     """
     :return: (approximate NLL, validation perplexity, multi-sample elbo, word prediction accuracy)
     """
@@ -189,6 +187,10 @@ def validate(config, model, valid_data, vocab, phase='validation'):
     ppl_path = config['valid_path'] if phase == 'validation' else config['test_path']
     avg_ppl = perplexity_(config, model, ppl_path, vocab)
 
+    if verbose:
+        print('\n====> {}: NLL: {:.4f}  PPL: {:.4f}  ELBO: {:.4f}  WPA: {:.4f}'.format(
+            phase, np.mean(nlls), avg_ppl, np.mean(elbos), np.mean(wpas))
+        )
     return np.mean(nlls), avg_ppl, np.mean(elbos), np.mean(wpas)
 
 
