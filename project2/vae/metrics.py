@@ -60,32 +60,52 @@ def word_prediction_accuracy(model, loc, input, target, device):
 #     log_ppl = np.sum(NLLs) / (config['bptt_len'] * len(NLLs))
 #     return np.exp(log_ppl)
 
+# def perplexity_(config, model, iterator, vocab):
+#     model.eval()
+#     model.encoder.reset_hidden(bsz=1)
+#     bos_for_item = torch.LongTensor([vocab.stoi['<bos>']]).view(1, 1).to(config['device'])
+#     eos_for_item = torch.LongTensor([vocab.stoi['<eos>']]).view(1, 1).to(config['device'])
+#
+#     ppl = 0.
+#     for item in iterator:
+#         tokens = item.text.t()
+#         text = torch.cat((bos_for_item, tokens), dim=1)
+#         target = torch.cat((tokens, eos_for_item), dim=1)
+#         with torch.no_grad():
+#             log_p, loc, scale = model(text)
+#             nll = approximate_sentence_NLL(
+#                 model, loc, scale, text, target, config['device'], config['importance_samples']
+#             )
+#         sentence_ppl = nll / len(text)
+#         ppl += np.exp(sentence_ppl)
+#         print(np.exp(sentence_ppl))
+#     return ppl
 
-def perplexity_(config, model, path, vocab):
-    """
-       :return: (approximate NLL, validation perplexity, multi-sample elbo, word prediction accuracy)
-    """
-    with open(path) as f:
-        lines = [['<bos>'] +
-                 nltk.Tree.fromstring(line).leaves() +
-                 ['<eos>']
-                 for line in f.readlines()]
-    model.eval()
-    ppl = 0.
-    for line in lines:
-        tokens = torch.LongTensor([vocab.stoi[w] for w in line]).to(config['device'])
-        text = tokens[:-1].view(1, -1)
-        target = tokens[1:].view(1, -1)
-        with torch.no_grad():
-            log_p, loc, scale = model(text)
-            nll = approximate_sentence_NLL(
-                model, loc, scale, text, target, config['device'], config['importance_samples']
-            )
-        sentence_ppl = nll / len(target)
-        ppl += np.exp(sentence_ppl)
-
-    avg_perp = ppl / len(lines)
-    return avg_perp
+# def perplexity_(config, model, path, vocab):
+#     """
+#        :return: (approximate NLL, validation perplexity, multi-sample elbo, word prediction accuracy)
+#     """
+#     with open(path) as f:
+#         lines = [['<bos>'] +
+#                  nltk.Tree.fromstring(line).leaves() +
+#                  ['<eos>']
+#                  for line in f.readlines()]
+#     model.eval()
+#     ppl = 0.
+#     for line in lines:
+#         tokens = torch.LongTensor([vocab.stoi[w] for w in line]).to(config['device'])
+#         text = tokens[:-1].view(1, -1)
+#         target = tokens[1:].view(1, -1)
+#         with torch.no_grad():
+#             log_p, loc, scale = model(text)
+#             nll = approximate_sentence_NLL(
+#                 model, loc, scale, text, target, config['device'], config['importance_samples']
+#             )
+#         sentence_ppl = nll / len(target)
+#         ppl += np.exp(sentence_ppl)
+#
+#     avg_perp = ppl / len(lines)
+#     return avg_perp
 
 
 def multi_sample_elbo(loc, scale, approximate_nll):
@@ -115,7 +135,8 @@ def approximate_sentence_NLL(model, loc, scale, sent, target, device, nsamples=1
         z = encoder_distribution.sample((1,))             # sampling a z
         log_q_z_x = encoder_distribution.log_prob(z)      # the probablity of z under the encoder distribution
         log_p_z = prior_distribution.log_prob(z)          # the probability of z under a gaussian prior
-        logp = model.decode(sent, z)                      # the log-softmax word probabilities
+        with torch.no_grad():
+            logp = model.decode(sent, z)                  # the log-softmax word probabilities
         log_p_x_z = - NLL(logp.permute(0, 2, 1), target)  # the sentence probability given the latent variable
         samples.append(log_p_x_z.item() + log_p_z.item() - log_q_z_x.item())
     return np.log(nsamples) - logsumexp(samples)
