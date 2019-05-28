@@ -81,31 +81,30 @@ def word_prediction_accuracy(model, loc, input, target, device):
 #         print(np.exp(sentence_ppl))
 #     return ppl
 
-# def perplexity_(config, model, path, vocab):
-#     """
-#        :return: (approximate NLL, validation perplexity, multi-sample elbo, word prediction accuracy)
-#     """
-#     with open(path) as f:
-#         lines = [['<bos>'] +
-#                  nltk.Tree.fromstring(line).leaves() +
-#                  ['<eos>']
-#                  for line in f.readlines()]
-#     model.eval()
-#     ppl = 0.
-#     for line in lines:
-#         tokens = torch.LongTensor([vocab.stoi[w] for w in line]).to(config['device'])
-#         text = tokens[:-1].view(1, -1)
-#         target = tokens[1:].view(1, -1)
-#         with torch.no_grad():
-#             log_p, loc, scale = model(text)
-#             nll = approximate_sentence_NLL(
-#                 model, loc, scale, text, target, config['device'], config['importance_samples']
-#             )
-#         sentence_ppl = nll / len(target)
-#         ppl += np.exp(sentence_ppl)
-#
-#     avg_perp = ppl / len(lines)
-#     return avg_perp
+def perplexity(config, model, vocab, phase):
+    path = config['valid_path'] if phase == 'validation' else config['test_path']
+    with open(path) as f:
+        lines = [['<bos>'] +
+                 nltk.Tree.fromstring(line).leaves() +
+                 ['<eos>']
+                 for line in f.readlines()]
+    model.eval()
+    aggregate_nll = 0.
+    ntokens = 0
+    for line in lines:
+        tokens = torch.LongTensor([vocab.stoi[w] for w in line]).to(config['device'])
+        text = tokens[:-1].view(1, -1)
+        target = tokens[1:].view(1, -1)
+        with torch.no_grad():
+            log_p, loc, scale = model(text)
+            nll = approximate_sentence_NLL(
+                model, loc, scale, text, target, config['device'], config['importance_samples']
+            )
+        aggregate_nll += nll
+        ntokens += len(text)
+
+    log_ppl = aggregate_nll / ntokens
+    return np.exp(log_ppl)
 
 
 def multi_sample_elbo(loc, scale, approximate_nll):

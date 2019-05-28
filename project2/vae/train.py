@@ -11,7 +11,8 @@ from torchtext.datasets import PennTreebank
 import numpy as np
 
 from vae.vae import SentenceVAE
-from vae.metrics import Annealing, approximate_sentence_NLL, elbo_loss, multi_sample_elbo, word_prediction_accuracy
+from vae.metrics import Annealing, approximate_sentence_NLL, elbo_loss
+from vae.metrics import perplexity, multi_sample_elbo, word_prediction_accuracy
 
 
 EOS = '<eos>'
@@ -170,7 +171,6 @@ def validate(config, model, iterator, vocab, phase='validation', verbose=True):
     nlls = []
     wpas = []
     elbos = []
-    ppl = 0.
     print('Starting {}!'.format(phase))
     for item in iterator:
         tokens = item.text.t()
@@ -181,10 +181,11 @@ def validate(config, model, iterator, vocab, phase='validation', verbose=True):
             nll = approximate_sentence_NLL(model, loc, scale, text, target, config['device'], config['importance_samples'])
             wpa = word_prediction_accuracy(model, loc, text, target, config['device'])
             elbo = multi_sample_elbo(loc, scale, nll)
-            ppl += np.exp((nll / len(text)))
         nlls.append(nll.item())
         wpas.append(wpa.item())
         elbos.append(elbo.item())
+
+    ppl = perplexity(config, model, vocab, phase)
 
     if verbose:
         print('\n====> {}: NLL: {:.4f}  PPL: {:.4f}  ELBO: {:.4f}  WPA: {:.4f}'.format(
