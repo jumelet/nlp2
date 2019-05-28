@@ -2,7 +2,18 @@ import torch
 from torch.distributions import MultivariateNormal
 
 
-def sample_sentences(config, model, vocab, max_len=20, n=10, greedy=True, temp=1.0):
+def sample_sentences(config, model, vocab, n=10, max_len=20, greedy=True, temp=1.0):
+    """
+    :param config: configuration dictionary, typically defined in main.py
+    :param model: Sentence VAE
+    :param vocab: vocabulary object from torchtext.data.Field
+    :param n: number of sentences
+    :param max_len: the maximum length of the sampled sentences
+    :param greedy: whether to apply greedy decoding
+    :param temp: scaling value for non-greedy decoding
+
+    :return: list of n sentences as strings
+    """
     device = config['device']
     zdim = config['latent_dim']
 
@@ -34,23 +45,3 @@ def sample_sentences(config, model, vocab, max_len=20, n=10, greedy=True, temp=1
 
         sentences.append(' '.join(tokens))
     return sentences
-
-
-
-    ##########################################################################################
-    # self.eos = self.embed(torch.tensor(batch_size * [self.w2i['[EOS]']]))
-    #
-    # seq = []
-    # log_p = []
-    # for i in range(len):
-    #     # print()
-    #     # print('!!!!', self.eos.view(1, batch_size, -1).shape)
-    #     # print()
-    #     output, hidden = self.rnn(input,
-    #                               hidden)
-    #     log_p_output = F.log_softmax(self.tovocab(output))
-    #     next_token_id = torch.argmax(log_p_output, dim=-1)
-    #     input = self.embed(next_token_id)
-    #     log_p.append(log_p_output)
-    #     seq.append(next_token_id)
-    # return torch.stack(log_p), torch.stack(seq)
