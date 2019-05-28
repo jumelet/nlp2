@@ -6,8 +6,12 @@ from torch.distributions.multivariate_normal import MultivariateNormal
 from scipy.special import logsumexp
 
 
+def sigmoid(x):
+    return 1 / (1 + np.exp(-x))
+
+
 class Annealing(object):
-    def __init__(self, type='linear', nsteps=5000):
+    def __init__(self, type='linear', nsteps=2000):
         self.nsteps = nsteps
         self.step = 0
 
@@ -20,7 +24,7 @@ class Annealing(object):
         if self.type == 'linear':
             return self.step / self.nsteps
         else:
-            raise NotImplementedError()
+            return sigmoid((self.step - 2500) * 0.002)
 
     def reset(self):
         self.step = 0
@@ -29,7 +33,7 @@ class Annealing(object):
 def KLLoss(loc, scale, annealing=None):
     kl_loss = -0.5 * torch.sum(1 + (scale ** 2) - (loc ** 2) - (scale ** 2).exp())
     if annealing:
-        kl_loss *= annealing.rate()
+        kl_loss *= annealing.rate
     return kl_loss
 
 

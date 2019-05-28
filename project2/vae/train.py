@@ -71,7 +71,7 @@ def initialize(config):
 
 
 def train(config, model, train_data, valid_data, vocab):
-    annealing = Annealing('linear', 2000)
+    annealing = Annealing(config['annealing'])
     optimizer = optim.Adam(model.parameters(), lr=config['learning_rate'])
 
     if config.get('checkpoint', None) is not None:
