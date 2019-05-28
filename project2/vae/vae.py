@@ -25,6 +25,7 @@ class RNNEncoder(nn.Module):
         self.device = device
 
         if rnn_type in ['LSTM', 'GRU']:
+            self.rnn_type = rnn_type
             self.rnn = getattr(nn, rnn_type)(edim, hdim, nlayers,
                                              bidirectional=bidirectional,
                                              dropout=dropout,
@@ -66,7 +67,11 @@ class RNNEncoder(nn.Module):
     def reset_hidden(self, bsz=None):
         if bsz is None:
             bsz = self.batch_size
-        self.hidden = torch.zeros(self.nlayers, bsz, self.hdim).to(self.device)
+        if self.rnn_type == 'GRU':
+            self.hidden = torch.zeros(self.nlayers, bsz, self.hdim).to(self.device)
+        else:
+            self.hidden = (torch.zeros(self.nlayers, bsz, self.hdim).to(self.device),
+                           torch.zeros(self.nlayers, bsz, self.hdim).to(self.device))
 
 
 class RNNDecoder(nn.Module):
@@ -79,6 +84,7 @@ class RNNDecoder(nn.Module):
         self.nlayers = nlayers * ndirections
 
         if rnn_type in ['LSTM', 'GRU']:
+            self.rnn_type = rnn_type
             self.rnn = getattr(nn, rnn_type)(edim, hdim, nlayers,
                                              bidirectional=bidirectional,
                                              dropout=dropout,
@@ -129,8 +135,8 @@ class SentenceVAE(nn.Module):
         self.device = device
         self.dropout_prob = word_dropout_prob
 
-    def encode(self, input, hidden=None):
-        h = self.encoder(input, hidden)
+    def encode(self, input):
+        h = self.encoder(input)
         return self.project_loc(h), F.softplus(self.project_scale(h))
 
     def reparametrize(self, loc, scale):
