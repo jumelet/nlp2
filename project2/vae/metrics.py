@@ -11,7 +11,7 @@ def sigmoid(x):
 
 
 class Annealing(object):
-    def __init__(self, type='linear', nsteps=2000):
+    def __init__(self, type='linear', nsteps=5000):
         self.nsteps = nsteps
         self.step = 0
 
@@ -33,7 +33,7 @@ class Annealing(object):
 def KLLoss(loc, scale, annealing=None):
     kl_loss = -0.5 * torch.sum(1 + (scale ** 2) - (loc ** 2) - (scale ** 2).exp())
     if annealing:
-        kl_loss *= annealing.rate
+        kl_loss *= annealing.rate()
     return kl_loss
 
 
