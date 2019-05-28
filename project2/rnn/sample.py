@@ -35,7 +35,10 @@ def perplexity(path, model, vocab, device='cpu'):
 
     model.eval()
 
-    perps = 0.
+    probs = 0.
+    n = 0
+
+    CEL = nn.CrossEntropyLoss(reduction='none')
 
     for line in lines:
         sen = torch.LongTensor([vocab.stoi[w] for w in line])
@@ -43,12 +46,11 @@ def perplexity(path, model, vocab, device='cpu'):
             out, hidden = model(sen[:-1].view(1, -1),
                                 hidden=model.init_hidden(1))
 
-        all_probs = nn.functional.log_softmax(out[0], dim=1)
-        probs = torch.gather(all_probs, 1, sen[1:].reshape(-1, 1).to(device))
+        probs += CEL(out[0], sen[1:].reshape(-1).to(device))
 
-        perps += torch.exp(-probs.sum() / len(line[:-1]))
+        n += len(line[:-1])
 
-    avg_perp = perps / len(lines)
+    avg_perp = torch.exp(probs / n)
 
     print(avg_perp)
 

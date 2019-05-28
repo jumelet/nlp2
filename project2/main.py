@@ -13,7 +13,7 @@ if __name__ == '__main__':
         'hidden_size': 256,
         'input_emb_dim': 256,
         'num_layers': 1,
-        'sample_every': 5,
+        'sample_every': 1,
         'sample_greedy': False,
         'save_every': -1,
         'temperature': 1.,

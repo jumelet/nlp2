@@ -18,14 +18,14 @@ def initialize(config):
         field = Field(batch_first=True,
                       tokenize=lambda s: ['<bos>'] + s.split(' ')
                       )
-        corpus = PennTreebank('data/train_lines.txt', field)
+        corpus = PennTreebank('_data/train_lines.txt', field)
     else:
         field = Field(batch_first=True,
                       include_lengths=True,
                       init_token='<bos>',
                       eos_token='<eos>',
                       )
-        corpus = TabularDataset(path='data/train_lines.txt',
+        corpus = TabularDataset(path='_data/train_lines.txt',
                                 format='tsv',
                                 fields=[('text', field)]
                                 )
@@ -121,10 +121,10 @@ def train(config):
                 print('\n', i, loss.item())
                 sample(model, vocab, greedy=False, temp=config['temperature'])
 
-                val_pp = perplexity('data/val_lines.txt', model, vocab)
+                val_pp = perplexity('_data/val_lines.txt', model, vocab)
                 scheduler.step(val_pp)
-            else:
-                optimizer.step()
+
+            optimizer.step()
 
         # perplexity('data/val_lines.txt', model, vocab)
 
