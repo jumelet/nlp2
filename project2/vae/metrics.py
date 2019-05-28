@@ -100,8 +100,8 @@ def perplexity(config, model, vocab, phase):
             nll = approximate_sentence_NLL(
                 model, loc, scale, text, target, config['device'], config['importance_samples']
             )
-        aggregate_nll += nll
-        ntokens += text.size(1)
+        aggregate_nll += nll.item()
+        ntokens += len(line[:-1])
 
     log_ppl = aggregate_nll / ntokens
     return np.exp(log_ppl)
