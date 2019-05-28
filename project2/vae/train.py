@@ -63,6 +63,7 @@ def initialize(config):
                 hdim=config['hidden_dim'],
                 zdim=config['latent_dim'],
                 vocab_len=len(vocab),
+                rnn_dropout=config['rnn_dropout'],
                 word_dropout_prob=config['word_dropout_prob'],
                 device=device)
 

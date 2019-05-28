@@ -15,7 +15,7 @@ from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 
 class RNNEncoder(nn.Module):
-    def __init__(self, rnn_type, nlayers, bidirectional, edim, hdim, zdim, vocab_len, batch_size, device):
+    def __init__(self, rnn_type, nlayers, bidirectional, edim, hdim, zdim, vocab_len, batch_size, dropout, device):
         super(RNNEncoder, self).__init__()
         self.V = vocab_len
         self.batch_size = batch_size
@@ -25,7 +25,10 @@ class RNNEncoder(nn.Module):
         self.device = device
 
         if rnn_type in ['LSTM', 'GRU']:
-            self.rnn = getattr(nn, rnn_type)(edim, hdim, nlayers, bidirectional=bidirectional, batch_first=True).to(device)
+            self.rnn = getattr(nn, rnn_type)(edim, hdim, nlayers,
+                                             bidirectional=bidirectional,
+                                             dropout=dropout,
+                                             batch_first=True).to(device)
         else:
             raise ValueError("""An invalid option for `--model` was supplied,
                                 options are ['LSTM', 'GRU']""")
@@ -67,7 +70,7 @@ class RNNEncoder(nn.Module):
 
 
 class RNNDecoder(nn.Module):
-    def __init__(self, rnn_type, nlayers, bidirectional, edim, hdim, zdim, vocab_len, device):
+    def __init__(self, rnn_type, nlayers, bidirectional, edim, hdim, zdim, vocab_len, dropout, device):
         super(RNNDecoder, self).__init__()
 
         ndirections = 2 if bidirectional else 1
@@ -76,7 +79,10 @@ class RNNDecoder(nn.Module):
         self.nlayers = nlayers * ndirections
 
         if rnn_type in ['LSTM', 'GRU']:
-            self.rnn = getattr(nn, rnn_type)(edim, hdim, nlayers, bidirectional=bidirectional, batch_first=True).to(device)
+            self.rnn = getattr(nn, rnn_type)(edim, hdim, nlayers,
+                                             bidirectional=bidirectional,
+                                             dropout=dropout,
+                                             batch_first=True).to(device)
         else:
             raise ValueError("""An invalid option for `--model` was supplied,
                                 options are ['LSTM', 'GRU']""")
@@ -102,11 +108,22 @@ class RNNDecoder(nn.Module):
 
 
 class SentenceVAE(nn.Module):
-    def __init__(self, batch_size, rnn_type, nlayers, bidirectional, edim, hdim, zdim, vocab_len, word_dropout_prob, device):
+    def __init__(self,
+                 batch_size,
+                 rnn_type,
+                 nlayers,
+                 bidirectional,
+                 edim,
+                 hdim,
+                 zdim,
+                 vocab_len,
+                 word_dropout_prob=0.,
+                 rnn_dropout=0.,
+                 device='cuda' if torch.cuda.is_available() else 'cpu'):
         super(SentenceVAE, self).__init__()
         
-        self.encoder = RNNEncoder(rnn_type, nlayers, bidirectional, edim, hdim, zdim, vocab_len, batch_size, device)
-        self.decoder = RNNDecoder(rnn_type, nlayers, bidirectional, edim, hdim, zdim, vocab_len, device)
+        self.encoder = RNNEncoder(rnn_type, nlayers, bidirectional, edim, hdim, zdim, vocab_len, batch_size, rnn_dropout, device)
+        self.decoder = RNNDecoder(rnn_type, nlayers, bidirectional, edim, hdim, zdim, vocab_len, rnn_dropout, device)
         self.project_loc = nn.Linear(zdim, zdim).to(device)
         self.project_scale = nn.Linear(zdim, zdim).to(device)
         self.device = device
@@ -122,12 +139,13 @@ class SentenceVAE(nn.Module):
         return loc + eps * std  # z
 
     def decode(self, input, z):
-        # randomly replace decoder input with <unk>
-        if self.dropout_prob > 0:
+        """ Randomly replace decoder input with <unk> """
+        if self.training and self.dropout_prob > 0:
             mask = torch.rand(input.size(), device=self.device)
             mask[mask < self.dropout_prob] = 0
             mask[mask >= self.dropout_prob] = 1
-            mask[0, :] = 1  # always keep begin of sentence
+            if mask.size(0) > 1:
+                mask[0, :] = 1  # keep begin of sentence
             input = torch.mul(input, mask.long())
         return self.decoder(input, z)
 
