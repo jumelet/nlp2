@@ -38,7 +38,7 @@ def perplexity(path, model, vocab, device='cpu'):
     probs = 0.
     n = 0
 
-    CEL = nn.CrossEntropyLoss(reduction='none')
+    CEL = nn.CrossEntropyLoss(reduction='sum')
 
     for line in lines:
         sen = torch.LongTensor([vocab.stoi[w] for w in line])
