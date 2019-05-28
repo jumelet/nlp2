@@ -56,7 +56,7 @@ class RNNEncoder(nn.Module):
         if hidden is None:
             hidden = self.hidden
 
-        output, hidden = self.rnn(embed_sequence, hidden)
+        output, _ = self.rnn(embed_sequence, hidden)
         last_output = output[:, -1, :]
 
         if lengths is not None:
@@ -82,6 +82,7 @@ class RNNDecoder(nn.Module):
         self.V = vocab_len
         self.hdim = hdim
         self.nlayers = nlayers * ndirections
+        self.device = device
 
         if rnn_type in ['LSTM', 'GRU']:
             self.rnn_type = rnn_type
@@ -107,7 +108,11 @@ class RNNDecoder(nn.Module):
         self.tovocab.weight.data.uniform_(-initrange, initrange)
 
     def forward(self, input, z):
-        h0 = self.decode(z).view(-1, input.size(0), self.hdim)
+        if self.rnn_type == 'GRU':
+            h0 = self.decode(z).view(-1, input.size(0), self.hdim)
+        else:
+            h0 = self.decode(z).view(-1, input.size(0), self.hdim)
+            h0 = (h0, torch.zeros_like(h0, device=self.device))
         output, _ = self.rnn(self.embed(input), h0)
         log_p = F.log_softmax(self.tovocab(output), dim=-1)
         return log_p
