@@ -101,7 +101,7 @@ def perplexity(config, model, vocab, phase):
                 model, loc, scale, text, target, config['device'], config['importance_samples']
             )
         aggregate_nll += nll
-        ntokens += text.shape[1]
+        ntokens += text.size(1)
 
     log_ppl = aggregate_nll / ntokens
     return np.exp(log_ppl)
