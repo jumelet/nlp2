@@ -172,7 +172,6 @@ def validate(config, model, iterator, vocab, phase='validation', verbose=True):
     nlls = []
     wpas = []
     elbos = []
-    print('Starting {}!'.format(phase))
     for item in iterator:
         tokens = item.text.t()
         text = torch.cat((bos_for_item, tokens), dim=1)
