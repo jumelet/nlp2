@@ -1,13 +1,15 @@
+import argparse
 import json
 from vae.train import initialize, train, test
 from vae.analysis import sample_sentences, reconstruct_sentence
 
 if __name__ == '__main__':
 
-    # with open('vae/configs/lstm.config', 'w') as f:
-    #     json.dump(config, f, indent=4)
+    parser = argparse.ArgumentParser(description='Sentence VAE')
+    parser.add_argument('-c', '--config', help='Config dictionary in a txt file', required=True)
+    config_path = parser.parse_args().config
 
-    with open('vae/configs/lstm.config', 'r') as f:
+    with open(config_path, 'r') as f:
         config = json.load(f)
 
     model, vocab, train_iterator, valid_iterator, test_iterator = initialize(config)
