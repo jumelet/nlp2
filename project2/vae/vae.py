@@ -15,7 +15,7 @@ from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 
 class RNNEncoder(nn.Module):
-    def __init__(self, rnn_type, nlayers, bidirectional, edim, hdim, zdim, vocab_len, batch_size, dropout, device):
+    def __init__(self, rnn_type, nlayers, bidirectional, embedding, edim, hdim, zdim, vocab_len, batch_size, dropout, device):
         super(RNNEncoder, self).__init__()
         self.V = vocab_len
         self.batch_size = batch_size
@@ -35,14 +35,15 @@ class RNNEncoder(nn.Module):
                                 options are ['LSTM', 'GRU']""")
 
 
-        self.embed = nn.Embedding(self.V, edim, padding_idx=0).to(device)
+        # self.embed = nn.Embedding(self.V, edim, padding_idx=0).to(device)
+        self.embed = embedding
         self.encode = nn.Linear(hdim * ndirections, zdim).to(device)
         self.init_weights()
         self.reset_hidden()
 
     def init_weights(self):
         initrange = 0.1
-        self.embed.weight.data.uniform_(-initrange, initrange)
+        # self.embed.weight.data.uniform_(-initrange, initrange)
         self.encode.bias.data.fill_(0)
         self.encode.weight.data.uniform_(-initrange, initrange)
 
@@ -75,7 +76,7 @@ class RNNEncoder(nn.Module):
 
 
 class RNNDecoder(nn.Module):
-    def __init__(self, rnn_type, nlayers, bidirectional, edim, hdim, zdim, vocab_len, dropout, device):
+    def __init__(self, rnn_type, nlayers, bidirectional, embedding, edim, hdim, zdim, vocab_len, dropout, device):
         super(RNNDecoder, self).__init__()
 
         ndirections = 2 if bidirectional else 1
@@ -94,14 +95,15 @@ class RNNDecoder(nn.Module):
             raise ValueError("""An invalid option for `--model` was supplied,
                                 options are ['LSTM', 'GRU']""")
 
-        self.embed = nn.Embedding(self.V, edim, padding_idx=0).to(device)
+        # self.embed = nn.Embedding(self.V, edim, padding_idx=0).to(device)
+        self.embed = embedding
         self.decode = nn.Linear(zdim, self.hdim * self.nlayers).to(device)
         self.tovocab = nn.Linear(self.hdim * ndirections, self.V).to(device)
         self.init_weights()
 
     def init_weights(self):
         initrange = 0.1
-        self.embed.weight.data.uniform_(-initrange, initrange)
+        # self.embed.weight.data.uniform_(-initrange, initrange)
         self.decode.bias.data.fill_(0)
         self.decode.weight.data.uniform_(-initrange, initrange)
         self.tovocab.bias.data.fill_(0)
@@ -132,13 +134,23 @@ class SentenceVAE(nn.Module):
                  rnn_dropout=0.,
                  device='cuda' if torch.cuda.is_available() else 'cpu'):
         super(SentenceVAE, self).__init__()
-        
-        self.encoder = RNNEncoder(rnn_type, nlayers, bidirectional, edim, hdim, zdim, vocab_len, batch_size, rnn_dropout, device)
-        self.decoder = RNNDecoder(rnn_type, nlayers, bidirectional, edim, hdim, zdim, vocab_len, rnn_dropout, device)
+
+        self.embedding = nn.Embedding(vocab_len, edim, padding_idx=0).to(device)
+        self.encoder = RNNEncoder(rnn_type, nlayers, bidirectional, self.embedding, edim, hdim, zdim, vocab_len, batch_size, rnn_dropout, device)
+        self.decoder = RNNDecoder(rnn_type, nlayers, bidirectional, self.embedding, edim, hdim, zdim, vocab_len, rnn_dropout, device)
         self.project_loc = nn.Linear(zdim, zdim).to(device)
         self.project_scale = nn.Linear(zdim, zdim).to(device)
         self.device = device
         self.dropout_prob = word_dropout_prob
+        self.init_weights()
+
+    def init_weights(self):
+        initrange = 0.1
+        self.embedding.weight.data.uniform_(-initrange, initrange)
+        self.project_loc.bias.data.fill_(0)
+        self.project_loc.weight.data.uniform_(-initrange, initrange)
+        self.project_scale.bias.data.fill_(0)
+        self.project_scale.weight.data.uniform_(-initrange, initrange)
 
     def encode(self, input):
         h = self.encoder(input)
