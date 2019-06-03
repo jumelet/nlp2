@@ -3,6 +3,7 @@ import json
 from vae.train import initialize, train, test
 from vae.analysis import sample_sentences, reconstruct_sentence
 
+
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='Sentence VAE')
