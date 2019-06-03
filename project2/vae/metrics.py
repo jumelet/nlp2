@@ -36,7 +36,7 @@ def KLLoss(loc, scale):
 
 
 def elbo_loss(logp, target, loc, scale):
-    NLL = torch.nn.NLLLoss(ignore_index=0)
+    NLL = torch.nn.NLLLoss(ignore_index=0, size_average=False)
     nll_loss = NLL(logp, target)
     kl_loss = KLLoss(loc, scale)
 

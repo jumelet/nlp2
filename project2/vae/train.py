@@ -90,10 +90,6 @@ def train(config, model, train_data, valid_data, vocab):
     writer = SummaryWriter(os.path.join(config['logdir'], results_dir, 'SenVAE'))
 
     best_epoch = (float('inf'), 0)
-    bos_for_batch = torch.LongTensor([vocab.stoi[BOS]]).repeat(config['batch_size'], 1).to(
-        config['device'])
-    eos_for_batch = torch.LongTensor([vocab.stoi[EOS]]).repeat(config['batch_size'], 1).to(
-        config['device'])
 
     print('Starting training!')
     for epoch in range(starting_epoch + 1, starting_epoch + config['epochs'] + 1):
@@ -121,12 +117,12 @@ def train(config, model, train_data, valid_data, vocab):
                                 loc,
                                 scale)
 
-            writer.add_scalar('NLL', nll.item(), i)
-            writer.add_scalar('KL', kl.item(), i)
+            writer.add_scalar('NLL', nll.item()/bsz, i)
+            writer.add_scalar('KL', kl.item()/bsz, i)
 
             loss = nll + kl*annealing.rate()
 
-            writer.add_scalar('ELBO', loss, i)
+            writer.add_scalar('ELBO', loss/bsz, i)
 
             loss.backward()
             epoch_losses.append(loss.item())
@@ -146,27 +142,27 @@ def train(config, model, train_data, valid_data, vocab):
         valid_wpas.append(valid_wpa)
 
         ## Store model if it's the best so far
-        # if valid_ppl <= best_epoch[0]:
-        #     pickles_path = '/home/mariog/projects/nlp2/project2/pickles'
-        #     torch.save({
-        #         'epoch': epoch,
-        #         'model_state_dict': model.state_dict(),
-        #         'optimizer_state_dict': optimizer.state_dict(),
-        #     }, '{}/{}/state_dict_e{}.pt'.format(pickles_path, results_dir, epoch))
-        #
-        #     old_path = '{}/{}/state_dict_e{}.pt'.format(pickles_path, results_dir, best_epoch[1])
-        #     if os.path.exists(old_path):
-        #         os.remove(old_path)
-        #     best_epoch = (valid_ppl, epoch)
+        if valid_ppl <= best_epoch[0]:
+            pickles_path = '/home/mariog/projects/nlp2/project2/pickles'
+            torch.save({
+                'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+            }, '{}/{}/state_dict_e{}.pt'.format(pickles_path, results_dir, epoch))
+
+            old_path = '{}/{}/state_dict_e{}.pt'.format(pickles_path, results_dir, best_epoch[1])
+            if os.path.exists(old_path):
+                os.remove(old_path)
+            best_epoch = (valid_ppl, epoch)
 
     ## Finally store all learning statistics
-    # torch.save({
-    #     'train_losses': train_losses,
-    #     'valid_nlls': valid_nlls,
-    #     'valid_ppls': valid_ppls,
-    #     'valid_elbos': valid_elbos,
-    #     'valid_wpas': valid_wpas
-    # }, '/home/mariog/projects/nlp2/project2/pickles/{}/statistics.pt'.format(results_dir))
+    torch.save({
+        'train_losses': train_losses,
+        'valid_nlls': valid_nlls,
+        'valid_ppls': valid_ppls,
+        'valid_elbos': valid_elbos,
+        'valid_wpas': valid_wpas
+    }, '/home/mariog/projects/nlp2/project2/pickles/{}/statistics.pt'.format(results_dir))
 
     return
 
