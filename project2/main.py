@@ -13,8 +13,8 @@ if __name__ == '__main__':
     with open(config_path, 'r') as f:
         config = json.load(f)
 
-    model, vocab, train_iterator, valid_iterator, test_iterator = initialize(config)
-    train(config, model, train_iterator, valid_iterator, vocab)
-    test(config, model, test_iterator, vocab)
+    model, vocab, train_iterator = initialize(config)
+    train(config, model, train_iterator, None, vocab)
+    test(config, model, None, vocab)
     # print(sample_sentences(config, model, vocab, max_len=20, n=10))
     # print(reconstruct_sentence('I go to the cinema every Saturday', config, model, vocab))

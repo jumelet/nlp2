@@ -176,4 +176,4 @@ class SentenceVAE(nn.Module):
         loc, scale = self.encode(input)
         z = self.reparametrize(loc, scale)
         log_p = self.decode(input, z)
-        return log_p.permute(0, 2, 1), loc, scale
+        return log_p, loc, scale

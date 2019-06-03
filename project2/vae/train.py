@@ -1,5 +1,6 @@
 from __future__ import print_function
 
+import datetime
 import os
 
 import nltk
@@ -8,8 +9,9 @@ import torch
 import torch.utils.data
 from tensorboardX import SummaryWriter
 from torch import optim
-from torchtext.data import BPTTIterator, Field
-from torchtext.datasets import PennTreebank
+from torch.nn.utils.rnn import pack_padded_sequence
+from torchtext.data import BucketIterator, Field, TabularDataset
+from tqdm import tqdm
 
 from vae.metrics import (
     Annealing, approximate_sentence_NLL, elbo_loss, multi_sample_elbo, perplexity,
@@ -26,35 +28,28 @@ def tokenize(s):
 
 def initialize(config):
     print('Corpus initialization...')
+    field = Field(batch_first=True,
+                  include_lengths=True,
+                  init_token='<bos>',
+                  eos_token='<eos>',
+                  )
+    corpus = TabularDataset(path=config['train_path'],
+                            format='tsv',
+                            fields=[('text', field)]
+                            )
+    field.build_vocab(corpus)
 
-    device = torch.device(config['device'])
-    torch.manual_seed(config['seed'])
+    iterator = BucketIterator(dataset=corpus,
+                              batch_size=config['batch_size'],
+                              device=config['device'],
+                              repeat=False,
+                              shuffle=True,
+                              sort=False,
+                              sort_key=lambda x: len(x.text),
+                              sort_within_batch=True,
+                              )
 
-    field = Field(batch_first=True, init_token=BOS, eos_token=EOS)
-    train_corpus = PennTreebank(config['train_path'], field)
-    valid_corpus = PennTreebank(config['valid_path'], field)
-    test_corpus = PennTreebank(config['test_path'], field)
-
-    field.build_vocab(train_corpus, valid_corpus, test_corpus, min_freq=1)
     vocab = field.vocab
-
-    train_iterator = BPTTIterator(train_corpus,
-                                  config['batch_size'],
-                                  config['bptt_len'],
-                                  device=config['device'],
-                                  repeat=False)
-
-    valid_iterator = BPTTIterator(valid_corpus,
-                                  1,
-                                  config['bptt_len'],
-                                  device=config['device'],
-                                  repeat=False)
-
-    test_iterator = BPTTIterator(test_corpus,
-                                 1,
-                                 config['bptt_len'],
-                                 device=config['device'],
-                                 repeat=False)
 
     model = SentenceVAE(config['batch_size'],
                         rnn_type=config['rnn_type'],
@@ -66,9 +61,9 @@ def initialize(config):
                         vocab_len=len(vocab),
                         rnn_dropout=config['rnn_dropout'],
                         word_dropout_prob=config['word_dropout_prob'],
-                        device=device)
+                        device=config['device'])
 
-    return model, vocab, train_iterator, valid_iterator, test_iterator
+    return model, vocab, iterator
 
 
 def train(config, model, train_data, valid_data, vocab):
@@ -83,17 +78,16 @@ def train(config, model, train_data, valid_data, vocab):
     else:
         starting_epoch = 0
 
-    writer = SummaryWriter(os.path.join(config['logdir'], 'SenVAE'))
-
     train_losses = []
     valid_nlls = []
     valid_ppls = []
     valid_elbos = []
     valid_wpas = []
 
-    # results_dir = config.get('results_dir', str(datetime.datetime.now()).replace(' ', '_')[5:16])
+    results_dir = config.get('results_dir', str(datetime.datetime.now()).replace(' ', '_')[5:16])
     # os.mkdir(os.path.join('pickles', results_dir))
     # print('Saving results to:', results_dir)
+    writer = SummaryWriter(os.path.join(config['logdir'], results_dir, 'SenVAE'))
 
     best_epoch = (float('inf'), 0)
     bos_for_batch = torch.LongTensor([vocab.stoi[BOS]]).repeat(config['batch_size'], 1).to(
@@ -106,16 +100,21 @@ def train(config, model, train_data, valid_data, vocab):
         epoch_losses = []
 
         ## Training (with batches)
-        for i, batch in enumerate(train_data):
+        for i, batch in tqdm(enumerate(train_data)):
             model.train()
             model.encoder.reset_hidden()
             optimizer.zero_grad()
 
-            tokens = batch.text.t()
-            text = torch.cat((bos_for_batch, tokens), dim=1)
-            target = torch.cat((tokens, eos_for_batch), dim=1)
+            text, lengths = batch.text
+            bsz = text.shape[0]
+            lengths -= 1
 
-            log_p, loc, scale = model(text)
+            input_ = text[:, :-1]
+
+            target = pack_padded_sequence(text[:, 1:], lengths=lengths, batch_first=True)[0]
+
+            log_p, loc, scale = model(input_)
+            log_p = pack_padded_sequence(log_p, lengths=lengths, batch_first=True)[0]
 
             nll, kl = elbo_loss(log_p,
                                 target,
