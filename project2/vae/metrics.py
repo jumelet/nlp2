@@ -30,18 +30,17 @@ class Annealing(object):
         self.step = 0
 
 
-def KLLoss(loc, scale, annealing=None):
+def KLLoss(loc, scale):
     kl_loss = -0.5 * torch.sum(1 + (scale ** 2) - (loc ** 2) - (scale ** 2).exp())
-    if annealing:
-        kl_loss *= annealing.rate()
     return kl_loss
 
 
-def elbo_loss(logp, target, loc, scale, annealing=None):
+def elbo_loss(logp, target, loc, scale):
     NLL = torch.nn.NLLLoss(ignore_index=0)
     nll_loss = NLL(logp, target)
-    kl_loss = KLLoss(loc, scale, annealing)
-    return nll_loss + kl_loss
+    kl_loss = KLLoss(loc, scale)
+
+    return nll_loss, kl_loss
 
 
 def word_prediction_accuracy(model, loc, input, target, device):
