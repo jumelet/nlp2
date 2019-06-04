@@ -144,7 +144,7 @@ class SentenceVAE(nn.Module):
         self.decoder = RNNDecoder(rnn_type, nlayers, bidirectional, self.embedding, edim, hdim,
                                   zdim, vocab_len, rnn_dropout, device)
         self.project_loc = nn.Linear(zdim, zdim).to(device)
-        self.project_scale = nn.Linear(zdim, zdim).to(device)
+        self.project_logv = nn.Linear(zdim, zdim).to(device)
         self.device = device
         self.dropout_prob = word_dropout_prob
         self.init_weights()
@@ -154,16 +154,16 @@ class SentenceVAE(nn.Module):
         self.embedding.weight.data.uniform_(-initrange, initrange)
         self.project_loc.bias.data.fill_(0)
         self.project_loc.weight.data.uniform_(-initrange, initrange)
-        self.project_scale.bias.data.fill_(0)
-        self.project_scale.weight.data.uniform_(-initrange, initrange)
+        self.project_logv.bias.data.fill_(0)
+        self.project_logv.weight.data.uniform_(-initrange, initrange)
 
     def encode(self, input_):
         h = self.encoder(input_)
-        return self.project_loc(h), F.softplus(self.project_scale(h))
+        return self.project_loc(h), F.softplus(self.project_logv(h))
 
     @staticmethod
-    def reparametrize(loc, scale):
-        std = torch.exp(0.5 * scale)
+    def reparametrize(loc, logv):
+        std = torch.exp(0.5 * logv)
         eps = torch.randn_like(std)
         return loc + eps * std  # z
 
@@ -179,7 +179,7 @@ class SentenceVAE(nn.Module):
         return self.decoder(input_, z)
 
     def forward(self, input_):
-        loc, scale = self.encode(input_)
-        z = self.reparametrize(loc, scale)
+        loc, logv = self.encode(input_)
+        z = self.reparametrize(loc, logv)
         log_p = self.decode(input_, z)
-        return log_p, loc, scale
+        return log_p, loc, logv

@@ -67,13 +67,13 @@ def train(config, model, train_data, val_iterator):
             model.encoder.reset_hidden(bsz)
             optimizer.zero_grad()
 
-            log_p, loc, scale = model(input_)
+            log_p, loc, logv = model(input_)
             log_p = pack_padded_sequence(log_p, lengths=lengths, batch_first=True)[0]
 
             nll, kl = elbo_loss(log_p,
                                 target,
                                 loc,
-                                scale)
+                                logv)
 
             loss = nll + kl*annealing.rate()
 
@@ -89,8 +89,6 @@ def train(config, model, train_data, val_iterator):
             loss.backward()
             epoch_losses.append(loss.item()/bsz)
             optimizer.step()
-
-            break
 
         epoch_train_loss = np.mean(epoch_losses)
         print('\n====> Epoch: {} Average training loss: {:.4f}'.format(epoch, epoch_train_loss))
@@ -119,17 +117,17 @@ def train(config, model, train_data, val_iterator):
                 os.remove(old_path)
             best_epoch = (valid_ppl, epoch)
 
-        ## Finally store all learning statistics
-        # torch.save({
-        #     'train_losses': train_losses,
-        #     'train_elbos': train_elbos,
-        #     'train_kls': train_kls,
-        #     'train_nlls': train_nlls,
-        #     'valid_nlls': valid_nlls,
-        #     'valid_ppls': valid_ppls,
-        #     'valid_elbos': valid_elbos,
-        #     'valid_wpas': valid_wpas
-        # }, 'pickles/{}/statistics.pt'.format(results_dir))
+            #  Finally store all learning statistics
+            torch.save({
+                'train_losses': train_losses,
+                'train_elbos': train_elbos,
+                'train_kls': train_kls,
+                'train_nlls': train_nlls,
+                'valid_nlls': valid_nlls,
+                'valid_ppls': valid_ppls,
+                'valid_elbos': valid_elbos,
+                'valid_wpas': valid_wpas
+            }, 'pickles/{}/statistics.pt'.format(results_dir))
 
     return
 
@@ -160,16 +158,12 @@ def validate(config, model, iterator, phase='val', verbose=True):
         NLL = torch.nn.NLLLoss(reduction='sum')
 
         with torch.no_grad():
-            z, loc, scale = model(input_)
+            loc, logv = model.encode(input_)
 
-            nll0 = NLL(z[0], target)
-
-            nll = approximate_sentence_NLL(model, loc, scale, input_, target, config['device'],
+            nll = approximate_sentence_NLL(model, loc, logv, input_, target, config['device'],
                                            config['importance_samples'])
-            nll2 = approximate_sentence_NLL(model, loc, scale, input_, target, config['device'],
-                                            100)
             wpa = word_prediction_accuracy(model, loc, input_, target, config['device'])
-            elbo = multi_sample_elbo(loc, scale, nll)
+            elbo = multi_sample_elbo(loc, logv, nll)
         nlls.append(nll.item())
         wpas.append(wpa.item())
         elbos.append(elbo.item())

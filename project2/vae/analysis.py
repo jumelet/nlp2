@@ -101,14 +101,14 @@ def reconstruct_sentence(sentence, config, model, vocab, nsamples=10):
     model.encoder.reset_hidden(bsz=1)
 
     with torch.no_grad():
-        loc, scale = model.encode(input_ids)
+        loc, logv = model.encode(input_ids)
     loc = loc.squeeze(0).to(device)
 
     reconstructions = []
     if nsamples == 0:
         reconstructions.append(_reconstruct(input_ids, loc, model, vocab))
     else:
-        var = (scale ** 2).squeeze(0).to(device)
+        var = logv.exp().squeeze(0).to(device)
         encoder_distribution = MultivariateNormal(loc, torch.diag(var))
         for _ in range(nsamples):
             z = encoder_distribution.sample((1,))

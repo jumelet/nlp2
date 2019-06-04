@@ -1,8 +1,7 @@
 {
     "annealing": "sigmoid",
-    "batch_size": 64,
+    "batch_size": 32,
     "bidir": false,
-    "checkpoint": "state_dict_e3.pt",
     "device": "cpu",
     "epochs": 20,
     "hidden_dim": 191,
@@ -18,5 +17,6 @@
     "test_path": "_data/test_lines.txt",
     "train_path": "_data/train_lines.txt",
     "valid_path": "_data/val_lines.txt",
+    "use_tb": true,
     "word_dropout_prob": 0.0
 }

@@ -30,15 +30,15 @@ class Annealing(object):
         self.step = 0
 
 
-def KLLoss(loc, scale):
-    kl_loss = -0.5 * torch.sum(1 + (scale ** 2) - (loc ** 2) - (scale ** 2).exp())
+def KLLoss(loc, logv):
+    kl_loss = -0.5 * torch.sum(1 + logv - (loc ** 2) - logv.exp())
     return kl_loss
 
 
-def elbo_loss(logp, target, loc, scale):
+def elbo_loss(logp, target, loc, logv):
     NLL = torch.nn.NLLLoss(ignore_index=0, reduction='sum')
     nll_loss = NLL(logp, target)
-    kl_loss = KLLoss(loc, scale)
+    kl_loss = KLLoss(loc, logv)
 
     return nll_loss, kl_loss
 
@@ -53,24 +53,24 @@ def word_prediction_accuracy(model, loc, input, target, device):
     return torch.mean(torch.eq(torch.argmax(logp, dim=-1), target).float())
 
 
-def multi_sample_elbo(loc, scale, approximate_nll):
+def multi_sample_elbo(loc, logv, approximate_nll):
     """
     :param loc: The location vector of this sentence's latent variable
-    :param scale: The scale vector of this sentence's latent variable
+    :param logv: The logv vector of this sentence's latent variable
     :param approximate_nll: the importance sampling estimate of this sentence's NLL
 
     :return: A multi-sample estimate of the evidence lower-bound (ELBO) for the sentence VAE.
     """
-    return approximate_nll + KLLoss(loc, scale)
+    return approximate_nll + KLLoss(loc, logv)
 
 
-def approximate_sentence_NLL(model, loc, scale, sent, target, device, nsamples=16):
+def approximate_sentence_NLL(model, loc, logv, sent, target, device, nsamples=16):
     """
     NLL with Importance Sampling.
     """
     zdim = loc.size(1)
     loc = loc.squeeze(0).to(device)
-    var = (scale ** 2).squeeze(0).to(device)
+    var = logv.exp().squeeze(0).to(device)
     encoder_distribution = MultivariateNormal(loc, torch.diag(var))
     prior_distribution = MultivariateNormal(torch.zeros(zdim, device=device), torch.eye(zdim, device=device))
 
