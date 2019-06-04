@@ -24,7 +24,6 @@ def train(config, model, train_data, val_iterator):
 
     if config.get('checkpoint', None) is not None:
         checkpoint = torch.load(config['checkpoint'], map_location=config['device'])
-        model.load_state_dict(checkpoint['model_state_dict'], )
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         starting_epoch = checkpoint['epoch']
     else:
@@ -106,7 +105,7 @@ def train(config, model, train_data, val_iterator):
         valid_elbos.append(valid_elbo)
         valid_wpas.append(valid_wpa)
 
-        ## Store model if it's the best so far
+        # Store model if it's the best so far
         if valid_ppl <= best_epoch[0]:
             pickles_path = 'pickles'
             torch.save({
@@ -121,16 +120,16 @@ def train(config, model, train_data, val_iterator):
             best_epoch = (valid_ppl, epoch)
 
         ## Finally store all learning statistics
-        torch.save({
-            'train_losses': train_losses,
-            'train_elbos': train_elbos,
-            'train_kls': train_kls,
-            'train_nlls': train_nlls,
-            'valid_nlls': valid_nlls,
-            'valid_ppls': valid_ppls,
-            'valid_elbos': valid_elbos,
-            'valid_wpas': valid_wpas
-        }, 'pickles/{}/statistics.pt'.format(results_dir))
+        # torch.save({
+        #     'train_losses': train_losses,
+        #     'train_elbos': train_elbos,
+        #     'train_kls': train_kls,
+        #     'train_nlls': train_nlls,
+        #     'valid_nlls': valid_nlls,
+        #     'valid_ppls': valid_ppls,
+        #     'valid_elbos': valid_elbos,
+        #     'valid_wpas': valid_wpas
+        # }, 'pickles/{}/statistics.pt'.format(results_dir))
 
     return
 
@@ -158,10 +157,17 @@ def validate(config, model, iterator, phase='val', verbose=True):
 
         target = pack_padded_sequence(text[:, 1:], lengths=lengths, batch_first=True)[0]
 
+        NLL = torch.nn.NLLLoss(reduction='sum')
+
         with torch.no_grad():
-            _, loc, scale = model(input_)
+            z, loc, scale = model(input_)
+
+            nll0 = NLL(z[0], target)
+
             nll = approximate_sentence_NLL(model, loc, scale, input_, target, config['device'],
                                            config['importance_samples'])
+            nll2 = approximate_sentence_NLL(model, loc, scale, input_, target, config['device'],
+                                            100)
             wpa = word_prediction_accuracy(model, loc, input_, target, config['device'])
             elbo = multi_sample_elbo(loc, scale, nll)
         nlls.append(nll.item())
