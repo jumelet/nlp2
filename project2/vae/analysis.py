@@ -1,6 +1,7 @@
 import nltk
 import torch
 from torch.distributions import MultivariateNormal
+from torch.nn import functional as F
 
 
 def next_token(logp, greedy=True, temp=1.0):
@@ -40,27 +41,51 @@ def sample_sentences(config, model, vocab, n=10, max_len=20, greedy=True, temp=1
     bos = torch.LongTensor([vocab.stoi['<bos>']]).view(1, 1).to(device)
 
     prior_distribution = MultivariateNormal(torch.zeros(zdim, device=device), torch.eye(zdim, device=device))
-    z = prior_distribution.sample((1,))
 
     sentences = []
     for _ in range(n):
+        z = prior_distribution.sample((1,))
         tokens = []
         token = bos
-        for _ in range(max_len):
+        for t in range(max_len):
+
             tokens.append(vocab.itos[token])
             if vocab.itos[token] == '<eos>':
                 break
 
             with torch.no_grad():
-                logp = model.decode(token, z)
+                if t == 0:
+                    h0 = model.decoder.decode(z).view(-1, token.size(0), model.decoder.hdim)
+                    embed = model.decoder.embed(token)
+                    output, h_n = model.decoder.rnn(embed, h0)
+                    log_p = F.log_softmax(model.decoder.tovocab(output), dim=-1)
+                else:
+                    embed = model.decoder.embed(token)
+                    output, h_n = model.decoder.rnn(embed, h_n)
+                    log_p = F.log_softmax(model.decoder.tovocab(output), dim=-1)
 
-            token = next_token(logp, greedy, temp)
+                # print(logp, logp.size())
+
+            token = next_token(log_p, greedy, temp)
 
         sentences.append(' '.join(tokens))
     return sentences
 
 
-def _reconstruct(input, z, model, vocab):
+# embed = model.decoder.embed(input, h)
+# model.decoder.rnn()
+#
+#    if self.rnn_type == 'GRU':
+#
+#        else:
+#            h0 = self.decode(z).view(-1, input.size(0), self.hdim)
+#            h0 = (h0, torch.zeros_like(h0, device=self.device))
+#        output, _ = self.rnn(self.embed(input), h0)
+#
+#        log_p = F.log_softmax(self.tovocab(output), dim=-1)
+
+
+def _reconstruct(z, model, vocab, config, max_len=20):
     """
     Reconstruct a sentence given a latent variable.
 
@@ -70,13 +95,42 @@ def _reconstruct(input, z, model, vocab):
     :param vocab: vocabulary object from torchtext.data.Field
     :return: (str) the reconstructed sentence
     """
-    with torch.no_grad():
-        logp = model.decode(input, z)
-    token_ids = torch.argmax(logp, dim=-1)
-    return ' '.join([vocab.itos[i] for i in token_ids.squeeze(0)])
+    greedy = True
+    temp = 1.0
+    device = config['device']
+    zdim = config['latent_dim']
+
+    model.eval()
+    model.encoder.reset_hidden(bsz=1)
+    bos = torch.LongTensor([vocab.stoi['<bos>']]).view(1, 1).to(device)
+
+    tokens = []
+    token = bos
+    for t in range(max_len):
+
+        tokens.append(vocab.itos[token])
+        if vocab.itos[token] == '<eos>':
+            break
+
+        with torch.no_grad():
+            if t == 0:
+                h0 = model.decoder.decode(z).view(-1, token.size(0), model.decoder.hdim)
+                embed = model.decoder.embed(token)
+                output, h_n = model.decoder.rnn(embed, h0)
+                log_p = F.log_softmax(model.decoder.tovocab(output), dim=-1)
+            else:
+                embed = model.decoder.embed(token)
+                output, h_n = model.decoder.rnn(embed, h_n)
+                log_p = F.log_softmax(model.decoder.tovocab(output), dim=-1)
+
+                # print(logp, logp.size())
+
+            token = next_token(log_p, greedy, temp)
+
+    return ' '.join(tokens)
 
 
-def reconstruct_sentence(sentence, config, model, vocab, nsamples=10):
+def reconstruct_sentence(sentence, config, model, vocab, nsamples=0):
     """
     Test the reconstruction capability of the Sentence VAE by reconstructing a sentence with samples from
     the approximate posterior or from its mean.
@@ -101,17 +155,17 @@ def reconstruct_sentence(sentence, config, model, vocab, nsamples=10):
     model.encoder.reset_hidden(bsz=1)
 
     with torch.no_grad():
-        loc, logv = model.encode(input_ids)
+        loc, log_var = model.encode(input_ids)
     loc = loc.squeeze(0).to(device)
 
     reconstructions = []
     if nsamples == 0:
-        reconstructions.append(_reconstruct(input_ids, loc, model, vocab))
+        reconstructions.append(_reconstruct(loc, model, vocab, config))
     else:
-        var = logv.exp().squeeze(0).to(device)
+        var = torch.exp(log_var).squeeze(0).to(device)
         encoder_distribution = MultivariateNormal(loc, torch.diag(var))
         for _ in range(nsamples):
             z = encoder_distribution.sample((1,))
-            reconstructions.append(_reconstruct(input_ids, z, model, vocab))
+            reconstructions.append(_reconstruct(z, model, vocab, config))
 
     return reconstructions

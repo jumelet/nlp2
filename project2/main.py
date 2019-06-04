@@ -18,13 +18,14 @@ if __name__ == '__main__':
 
     model, train_iterator, train_field = initialize(config)
 
-    val_iterator, f1 = create_iterator(f'_data/val_lines.txt', 1, config['device'], field=train_field)
-    test_iterator, f2 = create_iterator(f'_data/test_lines.txt', 1, config['device'], field=train_field)
+    #val_iterator, f1 = create_iterator(f'_data/val_lines.txt', 1, config['device'], field=train_field)
+    #test_iterator, f2 = create_iterator(f'_data/test_lines.txt', 1, config['device'], field=train_field)
 
-    print(len(train_field.vocab), len(f1.vocab), len(f2.vocab))
+    #print(len(train_field.vocab), len(f1.vocab), len(f2.vocab))
 
-    train(config, model, train_iterator, val_iterator)
+    #train(config, model, train_iterator, val_iterator)
 
-    # nll, ppl, elbo, wpa = validate(config, model, test_iterator, phase='test')
-    # pprint(sample_sentences(config, model, train_field.vocab, max_len=20, n=10))
-    # pprint(reconstruct_sentence('I go to the cinema every Saturday', config, model, train_field.vocab))
+    #nll, ppl, elbo, wpa = validate(config, model, test_iterator, phase='test')
+    pprint(sample_sentences(config, model, train_field.vocab, max_len=20, n=10))
+    print('reconstruction....')
+    pprint(reconstruct_sentence('I go to the cinema every Saturday', config, model, train_field.vocab, nsamples=5))
