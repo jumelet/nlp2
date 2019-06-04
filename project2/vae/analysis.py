@@ -169,3 +169,47 @@ def reconstruct_sentence(sentence, config, model, vocab, nsamples=0):
             reconstructions.append(_reconstruct(z, model, vocab, config))
 
     return reconstructions
+
+
+def homotopy(alpha, sentence1, sentence2, vocab, model, config, max_len=20, sample_based=False):
+    posteriors = []
+    for sentence in [sentence1, sentence2]:
+        device = config['device']
+        try:
+            tokens = nltk.Tree.fromstring(sentence).leaves()
+        except ValueError:
+            tokens = sentence.split()
+        input_ids = torch.LongTensor([vocab.stoi[w] for w in ['<bos>'] + tokens])
+        input_ids = input_ids.view(1, -1).to(config['device'])
+
+        model.eval()
+        model.encoder.reset_hidden(bsz=1)
+
+        with torch.no_grad():
+            loc, log_var = model.encode(input_ids)
+        loc = loc.squeeze(0).to(device)
+
+        posteriors.append([loc, log_var])
+
+    posterior_1, posterior_2 = posteriors
+    loc1 = posterior_1[0]
+    loc2 = posterior_2[0]
+    log_var1 = posterior_1[1]
+    log_var2 = posterior_2[1]
+    if sample_based == True:
+
+        var1 = torch.exp(log_var1).squeeze(0).to(device)
+        var2 = torch.exp(log_var2).squeeze(0).to(device)
+
+        encoder_distribution1 = MultivariateNormal(loc1, torch.diag(var1))
+        encoder_distribution2 = MultivariateNormal(loc2, torch.diag(var2))
+        sample1 = encoder_distribution.sample((1,))
+        sample2 = encoder_distribution.sample((1,))
+        z_homotopy = alpha * sample1 + (1 - alpha) * sample2
+    else:
+
+        z_homotopy = alpha * loc1 + (1 - alpha) * loc1
+
+    reconstruction_homotopy = _reconstruct(z_homotopy, model, vocab, config)
+
+    return reconstruction_homotopy
