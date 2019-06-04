@@ -15,7 +15,8 @@ from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 
 class RNNEncoder(nn.Module):
-    def __init__(self, rnn_type, nlayers, bidirectional, embedding, edim, hdim, zdim, vocab_len, batch_size, dropout, device):
+    def __init__(self, rnn_type, nlayers, bidirectional, embedding, edim, hdim, zdim, vocab_len,
+                 batch_size, dropout, device):
         super(RNNEncoder, self).__init__()
         self.V = vocab_len
         self.batch_size = batch_size
@@ -34,11 +35,10 @@ class RNNEncoder(nn.Module):
             raise ValueError("""An invalid option for `--model` was supplied,
                                 options are ['LSTM', 'GRU']""")
 
-
-        # self.embed = nn.Embedding(self.V, edim, padding_idx=0).to(device)
         self.embed = embedding
         self.encode = nn.Linear(hdim * ndirections, zdim).to(device)
         self.init_weights()
+        self.hidden = None
         self.reset_hidden()
 
     def init_weights(self):
@@ -47,13 +47,13 @@ class RNNEncoder(nn.Module):
         self.encode.bias.data.fill_(0)
         self.encode.weight.data.uniform_(-initrange, initrange)
 
-    def forward(self, input, lengths=None, hidden=None):
-        embed_sequence = self.embed(input)
+    def forward(self, input_, lengths=None, hidden=None):
+        embed_sequence = self.embed(input_)
 
         if lengths is not None:
             embed_sequence = pack_padded_sequence(embed_sequence,
-                                           lengths=lengths,
-                                           batch_first=True)
+                                                  lengths=lengths,
+                                                  batch_first=True)
         if hidden is None:
             hidden = self.hidden
 
@@ -76,7 +76,8 @@ class RNNEncoder(nn.Module):
 
 
 class RNNDecoder(nn.Module):
-    def __init__(self, rnn_type, nlayers, bidirectional, embedding, edim, hdim, zdim, vocab_len, dropout, device):
+    def __init__(self, rnn_type, nlayers, bidirectional, embedding, edim, hdim, zdim, vocab_len,
+                 dropout, device):
         super(RNNDecoder, self).__init__()
 
         ndirections = 2 if bidirectional else 1
@@ -116,7 +117,9 @@ class RNNDecoder(nn.Module):
             h0 = self.decode(z).view(-1, input.size(0), self.hdim)
             h0 = (h0, torch.zeros_like(h0, device=self.device))
         output, _ = self.rnn(self.embed(input), h0)
+
         log_p = F.log_softmax(self.tovocab(output), dim=-1)
+
         return log_p
 
 
@@ -136,8 +139,10 @@ class SentenceVAE(nn.Module):
         super(SentenceVAE, self).__init__()
 
         self.embedding = nn.Embedding(vocab_len, edim, padding_idx=0).to(device)
-        self.encoder = RNNEncoder(rnn_type, nlayers, bidirectional, self.embedding, edim, hdim, zdim, vocab_len, batch_size, rnn_dropout, device)
-        self.decoder = RNNDecoder(rnn_type, nlayers, bidirectional, self.embedding, edim, hdim, zdim, vocab_len, rnn_dropout, device)
+        self.encoder = RNNEncoder(rnn_type, nlayers, bidirectional, self.embedding, edim, hdim,
+                                  zdim, vocab_len, batch_size, rnn_dropout, device)
+        self.decoder = RNNDecoder(rnn_type, nlayers, bidirectional, self.embedding, edim, hdim,
+                                  zdim, vocab_len, rnn_dropout, device)
         self.project_loc = nn.Linear(zdim, zdim).to(device)
         self.project_scale = nn.Linear(zdim, zdim).to(device)
         self.device = device
@@ -152,28 +157,29 @@ class SentenceVAE(nn.Module):
         self.project_scale.bias.data.fill_(0)
         self.project_scale.weight.data.uniform_(-initrange, initrange)
 
-    def encode(self, input):
-        h = self.encoder(input)
+    def encode(self, input_):
+        h = self.encoder(input_)
         return self.project_loc(h), F.softplus(self.project_scale(h))
 
-    def reparametrize(self, loc, scale):
+    @staticmethod
+    def reparametrize(loc, scale):
         std = torch.exp(0.5 * scale)
         eps = torch.randn_like(std)
         return loc + eps * std  # z
 
-    def decode(self, input, z):
+    def decode(self, input_, z):
         """ Randomly replace decoder input with <unk> """
         if self.training and self.dropout_prob > 0:
-            mask = torch.rand(input.size(), device=self.device)
+            mask = torch.rand(input_.size(), device=self.device)
             mask[mask < self.dropout_prob] = 0
             mask[mask >= self.dropout_prob] = 1
             if mask.size(0) > 1:
-                mask[0, :] = 1  # keep begin of sentence
-            input = torch.mul(input, mask.long())
-        return self.decoder(input, z)
+                mask[:, 0] = 1  # keep begin of sentence
+            input_ = torch.mul(input_, mask.long())
+        return self.decoder(input_, z)
 
-    def forward(self, input):
-        loc, scale = self.encode(input)
+    def forward(self, input_):
+        loc, scale = self.encode(input_)
         z = self.reparametrize(loc, scale)
-        log_p = self.decode(input, z)
+        log_p = self.decode(input_, z)
         return log_p, loc, scale

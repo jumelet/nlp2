@@ -1,8 +1,9 @@
 import argparse
 import json
-from vae.train import initialize, train, test
+from vae.train import train, validate
 from vae.analysis import sample_sentences, reconstruct_sentence
-
+from vae.initialize import initialize, create_iterator
+from pprint import pprint
 
 if __name__ == '__main__':
 
@@ -13,8 +14,17 @@ if __name__ == '__main__':
     with open(config_path, 'r') as f:
         config = json.load(f)
 
-    model, vocab, train_iterator = initialize(config)
-    train(config, model, train_iterator, None, vocab)
-    test(config, model, None, vocab)
+    pprint(config)
+
+    model, train_iterator, train_field = initialize(config)
+
+    val_iterator, f1 = create_iterator(f'_data/val_lines.txt', 1, config['device'], field=train_field)
+    test_iterator, f2 = create_iterator(f'_data/test_lines.txt', 1, config['device'], field=train_field)
+
+    print(len(train_field.vocab), len(f1.vocab), len(f2.vocab))
+
+    train(config, model, train_iterator, val_iterator)
+
+    nll, ppl, elbo, wpa = validate(config, model, test_iterator, phase='test')
     # print(sample_sentences(config, model, vocab, max_len=20, n=10))
     # print(reconstruct_sentence('I go to the cinema every Saturday', config, model, vocab))
