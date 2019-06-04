@@ -85,6 +85,12 @@ def train(config):
         epoch = 0
         losses = []
 
+    perplexity('_data/train_lines.txt', model, vocab)
+    perplexity('_data/val_lines.txt', model, vocab)
+    perplexity('_data/test_lines.txt', model, vocab)
+
+    return
+
     results_dir = config.get('results_dir', str(datetime.datetime.now()).replace(' ', '_')[5:16])
     if not os.path.isdir(os.path.join('pickles', results_dir)):
         os.mkdir(os.path.join('pickles', results_dir))

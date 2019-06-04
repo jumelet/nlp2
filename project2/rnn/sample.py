@@ -52,7 +52,7 @@ def perplexity(path, model, vocab, device='cpu'):
 
     avg_perp = torch.exp(probs / n)
 
-    print(avg_perp)
+    print(avg_perp, probs)
 
     model.train()
 
